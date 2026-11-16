@@ -38,7 +38,7 @@ function el(id) {
 const listeners = {};
 Object.assign(globalThis, {
   window:globalThis, innerWidth:1280, innerHeight:896,
-  document:{ getElementById:el, createElement:() => el('_tmp' + Math.random()) },
+  document:{ getElementById:el, createElement:() => el('_tmp' + Math.random()), querySelector:() => null },
   addEventListener:(t, f) => (listeners[t] ??= []).push(f),
   requestAnimationFrame:() => 0,
   setTimeout:() => 0, clearTimeout:() => {},
@@ -82,6 +82,17 @@ for (let r = 0; r < runs; r++) {
       const m = Math.floor(t / 60); if (!(m in depthAt)) depthAt[m] = s.depth;
     }
   } catch (e) { err = e.stack.split('\n').slice(0, 4).join(' | '); }
+  if (!err && !stuck && ab.s.state !== 'over') ab.abandon();   // time limit: end the run so scrip is paid out
+  // tarot policy: keep strong cards, replace the weakest when the hand is full, otherwise pass for scrip
+  let tarot = '';
+  if (ab.pending) {
+    const c = ab.pending, v = ab.cardValue(c), hand = ab.hand;
+    const worst = hand.reduce((w, h, i) => (w < 0 || ab.cardValue(h) < ab.cardValue(hand[w])) ? i : w, -1);
+    if (hand.length < 3 && v >= 140) { ab.tarotChoice('keep'); tarot = 'keep'; }
+    else if (hand.length >= 3 && v > ab.cardValue(hand[worst]) + 40) { ab.tarotChoice('r' + worst); tarot = 'replace'; }
+    else { ab.tarotChoice('pass'); tarot = 'pass+' + v; }
+    tarot += ` ${c.n}${c.rev ? 'R' : ''}`;
+  }
   const s = ab.s;
   const foundry = [];
   if (process.env.META) for (let g = 0; g < 60; g++) {
@@ -89,7 +100,7 @@ for (let r = 0; r < runs; r++) {
     if (!cand.length || ab.metaCost(cand[0].k) > ab.save.scrip) break;
     foundry.push(cand[0].k); ab.metaBuy(cand[0].k);
   }
-  results.push({ scripEarned:s.lastRun?.earned, scripBank:ab.save.scrip, ranks:Object.values(ab.save.ranks).reduce((a, b) => a + b, 0), foundry:foundry.join(','), unlocked:s.lastRun?.fresh?.join(','), chips:s.stats.chips, stal:s.stats.stalHits, laserShots:s.stats.laserShots, skimmed:s.stats.skimmed, run:r, end:err ? 'ERROR' : stuck ? 'STUCK' : s.state === 'over' ? 'died' : 'timeout', min:+(t / 60).toFixed(1), depth:s.depth,
+  results.push({ tarot, hand:ab.hand.map(h => h.n + (h.rev ? 'R' : '')).join(','), scripEarned:s.lastRun?.earned, scripBank:ab.save.scrip, ranks:Object.values(ab.save.ranks).reduce((a, b) => a + b, 0), foundry:foundry.join(','), unlocked:s.lastRun?.fresh?.join(','), chips:s.stats.chips, stal:s.stats.stalHits, laserShots:s.stats.laserShots, skimmed:s.stats.skimmed, run:r, end:err ? 'ERROR' : stuck ? 'STUCK' : s.state === 'over' ? 'died' : 'timeout', min:+(t / 60).toFixed(1), depth:s.depth,
     bankedTotal:s.bankedTotal, cargoLost:s.cargo, ore:s.stats.ore, blocks:s.stats.blocks, drops:s.stats.drops, hullHits:s.stats.hullHits,
     maxCores:s.stats.maxCores, maxStack:s.stats.maxStack, pods:s.stats.pods, buys:buys.join(','), depthByMin:Object.values(depthAt).join(' '), err });
 }
