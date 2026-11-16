@@ -84,7 +84,7 @@
     <div class="bc" id="hZone">STRUCTURE <span class="bar"><i id="hClr"></i><b style="left:65%"></b></span> <span id="hClrT">0%</span></div>
     <div id="msg"></div>
     <div id="chain"></div>
-    <div id="bossBar" style="position:absolute;left:0;right:0;top:calc(var(--u)*56);text-align:center;font-size:calc(var(--u)*17);display:none"><span id="bossName" class="red"></span> <span class="bar" style="width:calc(var(--u)*160)"><i id="bossHp" style="background:#ff5a3c"></i></span> <span id="bossNote" class="dim"></span></div>
+    <div id="bossBar" style="position:absolute;left:0;right:0;bottom:calc(var(--u)*30);text-align:center;font-size:calc(var(--u)*17);display:none"><span id="bossName" class="red"></span> <span class="bar" style="width:calc(var(--u)*160)"><i id="bossHp" style="background:#ff5a3c"></i></span> <span id="bossNote" class="dim"></span></div>
   </div>
 
   <div class="ov on" id="ovTitle"><div class="panel">
@@ -625,47 +625,66 @@ function debris(x, y, hex, n) {
 }
 
 // ============================================================ audio (tiny WebAudio synth)
-let AC = null, master = null, noiseBuf = null, muted = false, sfxBudget = 0, drone = null;
+let AC = null, master = null, bus = null, noiseBuf = null, muted = false, sfxBudget = 0, drone = null;
+// industrial audio: everything runs through a soft-clip drive and a compressor, so it's loud and gritty but never peaks
 function audioInit() {
   if (AC) { AC.resume?.(); return; }
   try {
     AC = new (window.AudioContext || window.webkitAudioContext)();
-    master = AC.createGain(); master.gain.value = 0.32; master.connect(AC.destination);
-    noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+    master = AC.createGain(); master.gain.value = 0.9;
+    const comp = AC.createDynamicsCompressor(); comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 5; comp.attack.value = 0.003; comp.release.value = 0.2;
+    const drive = AC.createWaveShaper(), curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(x * 2.2); }
+    drive.curve = curve; drive.oversample = '2x';
+    bus = AC.createGain(); bus.gain.value = 1.0;
+    bus.connect(drive).connect(comp).connect(master).connect(AC.destination);
+    noiseBuf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
     const ch = noiseBuf.getChannelData(0); for (let i = 0; i < ch.length; i++) ch[i] = Math.random() * 2 - 1;
-    // low cavern drone
-    const o = AC.createOscillator(), o2 = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain();
-    o.type = 'sawtooth'; o.frequency.value = 41; o2.type = 'sawtooth'; o2.frequency.value = 41.7;
-    f.type = 'lowpass'; f.frequency.value = 140; g.gain.value = 0.05;
-    o.connect(f); o2.connect(f); f.connect(g).connect(master); o.start(); o2.start(); drone = g;
+    // machinery bed: detuned saws + a square an octave up, chugging like a distant piston engine
+    const g = AC.createGain(), f = AC.createBiquadFilter(), lfo = AC.createOscillator(), lfoG = AC.createGain();
+    f.type = 'lowpass'; f.frequency.value = 190; f.Q.value = 3; g.gain.value = 0.07;
+    for (const [type, fr] of [['sawtooth', 41], ['sawtooth', 41.6], ['square', 82.3]]) { const o = AC.createOscillator(); o.type = type; o.frequency.value = fr; o.connect(f); o.start(); }
+    lfo.frequency.value = 2.3; lfoG.gain.value = 0.035; lfo.connect(lfoG).connect(g.gain); lfo.start();
+    f.connect(g).connect(bus); drone = g;
+    // distant clanks and steam in the dark
+    setInterval(() => { if (!muted && state === 'play') { const r = Math.random(); if (r < 0.5) metal(rnd(70, 140), 1.4, 0.06, 0, rnd(0, 0.3)); else hiss(rnd(0.6, 1.4), 0.04, 0); } }, 3700);
   } catch (e) { AC = null; }
 }
-function tone(f, d, type = 'square', v = 0.15, f2 = 0) {
-  if (!AC || muted || sfxBudget <= 0) return; sfxBudget--;
-  const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+const can = () => AC && !muted && sfxBudget-- > 0;
+// raw voices (no budget): an oscillator, a filtered noise burst, an inharmonic struck-metal partial stack, steam
+function osc(f, d, type, v, f2 = 0, at = 0) {
+  const t = AC.currentTime + at, o = AC.createOscillator(), g = AC.createGain();
   o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + d);
-  g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0008, t + d);
-  o.connect(g).connect(master); o.start(t); o.stop(t + d + 0.03);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0006, t + d);
+  o.connect(g).connect(bus); o.start(t); o.stop(t + d + 0.05);
 }
-function noise(d, v, freq, type = 'lowpass', q = 0.8) {
-  if (!AC || muted || sfxBudget <= 0) return; sfxBudget--;
-  const t = AC.currentTime, s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
-  s.buffer = noiseBuf; s.playbackRate.value = rnd(0.8, 1.2); f.type = type; f.frequency.value = freq; f.Q.value = q;
-  g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(0.0008, t + d);
-  s.connect(f).connect(g).connect(master); s.start(t, rnd(0, 0.5)); s.stop(t + d + 0.03);
+function nz(d, v, freq, type = 'lowpass', q = 0.8, at = 0, f2 = 0) {
+  const t = AC.currentTime + at, s2 = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  s2.buffer = noiseBuf; s2.playbackRate.value = rnd(0.8, 1.2); f.type = type; f.frequency.setValueAtTime(freq, t); if (f2) f.frequency.exponentialRampToValueAtTime(f2, t + d); f.Q.value = q;
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.003); g.gain.exponentialRampToValueAtTime(0.0006, t + d);
+  s2.connect(f).connect(g).connect(bus); s2.start(t, rnd(0, 1)); s2.stop(t + d + 0.05);
 }
+function metal(f, d, v, bright = 0.5, at = 0) {           // pipes, plates, anvils
+  const P = [[1, 1], [2.76, 0.6], [5.4, 0.4 * bright + 0.1], [8.93, 0.3 * bright]];
+  for (const [r, a] of P) if (a > 0.01) osc(f * r * rnd(0.99, 1.01), d / Math.sqrt(r), r < 2 ? 'triangle' : 'square', v * a * (r < 2 ? 1 : 0.35), 0, at);
+  nz(0.03, v * 0.8, f * 6, 'bandpass', 2, at);           // the strike
+}
+function hiss(d, v, at = 0) { nz(d, v, 5200, 'highpass', 0.7, at, 2600); }
+function tone(f, d, type = 'square', v = 0.15, f2 = 0) { if (can()) osc(f, d, type, v * 1.6, f2); }
+function noise(d, v, freq, type = 'lowpass', q = 0.8) { if (can()) nz(d, v * 1.6, freq, type, q); }
 const sfx = {
-  hit:(combo, hard) => { tone(196 * Math.pow(2, Math.min(combo, 24) / 12), 0.07, 'square', 0.07); noise(0.09, hard ? 0.22 : 0.16, hard ? 1800 : 900); },
-  crunch:() => noise(0.22, 0.28, 600),
-  paddle:() => { tone(110, 0.09, 'triangle', 0.2, 70); noise(0.05, 0.12, 2500, 'highpass'); },
-  wall:() => tone(80, 0.05, 'square', 0.05),
-  ore:(hi) => tone(hi ? 1320 : 880, 0.12, 'sine', 0.12, hi ? 1760 : 1175),
-  pod:() => { tone(440, 0.1, 'square', 0.1, 880); tone(660, 0.18, 'square', 0.08, 1320); },
-  boom:() => { noise(0.9, 0.55, 380); tone(60, 0.6, 'sawtooth', 0.25, 30); },
-  hull:() => { noise(0.5, 0.45, 300); tone(70, 0.5, 'square', 0.22, 35); },
-  drop:() => { noise(1.2, 0.25, 3000, 'highpass'); tone(48, 1.4, 'sawtooth', 0.22, 30); },
-  clamp:() => { tone(330, 0.08, 'square', 0.1); setTimeout(() => tone(495, 0.12, 'square', 0.1), 90); },
-  launch:() => tone(220, 0.15, 'sawtooth', 0.1, 520),
+  // pitch still climbs with the chain, but every hit is a struck pipe over a rock crunch
+  hit:(combo, hard) => { if (!can()) return; metal(150 * Math.pow(2, Math.min(combo, 24) / 12), hard ? 0.5 : 0.28, hard ? 0.22 : 0.15, hard ? 0.9 : 0.5); nz(0.12, hard ? 0.4 : 0.3, hard ? 1400 : 800); },
+  crunch:() => { if (!can()) return; nz(0.3, 0.45, 500); osc(70, 0.18, 'sine', 0.35, 40); },
+  paddle:() => { if (!can()) return; metal(92, 0.45, 0.32, 0.35); osc(58, 0.2, 'sine', 0.5, 38); hiss(0.18, 0.08); },
+  wall:() => { if (!can()) return; metal(128, 0.2, 0.12, 0.2); },
+  ore:(hi) => { if (!can()) return; metal(hi ? 1180 : 820, 0.5, 0.11, 1); },
+  pod:() => { if (!can()) return; for (let i = 0; i < 4; i++) nz(0.03, 0.3, 3000, 'bandpass', 4, i * 0.045); metal(330, 0.5, 0.15, 0.8, 0.18); },
+  boom:() => { if (!can()) return; nz(1.4, 0.8, 420, 'lowpass', 0.7, 0, 90); osc(46, 0.9, 'sawtooth', 0.45, 24); for (let i = 0; i < 4; i++) metal(rnd(160, 420), 0.4, 0.08, 0.6, 0.1 + i * rnd(0.08, 0.2)); },
+  hull:() => { if (!can()) return; metal(70, 0.9, 0.4, 1); nz(0.7, 0.6, 300); osc(620, 0.14, 'square', 0.12); osc(470, 0.14, 'square', 0.12, 0, 0.16); },
+  drop:() => { if (!can()) return; hiss(1.4, 0.3); osc(52, 1.6, 'sawtooth', 0.35, 28); for (let i = 0; i < 14; i++) nz(0.025, 0.22, 2200, 'bandpass', 5, 0.15 + i * 0.07); metal(84, 1.2, 0.25, 0.4, 1.3); },
+  clamp:() => { if (!can()) return; metal(300, 0.25, 0.18, 0.6); metal(450, 0.3, 0.18, 0.6, 0.11); hiss(0.35, 0.12, 0.05); },
+  launch:() => { if (!can()) return; osc(170, 0.22, 'sawtooth', 0.18, 540); metal(640, 0.3, 0.1, 0.8); },
 };
 
 // ============================================================ game state
@@ -1538,7 +1557,7 @@ addEventListener('keydown', e => {
   if (k === 'e') startDrop();
   if (k === 'c') { crt = !crt; post.material.uniforms.uCRT.value = crt ? 1 : 0; post.material.uniforms.uDither.value = crt ? 1 : 0; }
   if (k === 'j') shared.uSnap.value = 1 - shared.uSnap.value;
-  if (k === 'm') { muted = !muted; if (drone) drone.gain.value = muted ? 0 : 0.05; }
+  if (k === 'm') { muted = !muted; if (drone) drone.gain.value = muted ? 0 : 0.07; }
 });
 addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 document.getElementById('bStart').onclick = start;
@@ -1830,6 +1849,13 @@ requestAnimationFrame(frame);
 window.__ab = {
   giveShop(k, n = 1) { shop[k] = n; syncPanels(); },
   abandon() { if (state !== 'over') gameOver(); },
+  debugBossScene(i) {                                   // jump to a boss's biome and wake it (used for screenshots)
+    for (const [, row] of rows) { row.mesh.forEach(m => m && scene.remove(m)); row.deco.forEach(m => scene.remove(m)); } rows.clear();
+    R = Math.round(BOSSES[i].at / M_PER_ROW / DROP) * DROP; rigY = -R; firstRock = R + ZONE_OFF; ensureRows(); bossIdx = i;
+    if (boss) { scene.remove(boss.head); for (const s2 of boss.segs) scene.remove(s2.mesh); boss = null; }
+    for (const b of [...balls]) removeBall(b); paddleY = rigY - drop; dockNew(); loot.forEach(l => scene.remove(l.mesh, l.glow)); loot = [];
+    spawnBoss(); boss.y = -(R + 10); boss.trail = boss.trail.map(([x, y], k) => [boss.x - k * 0.06, -(R + 10) - k * 0.05]);
+  },
   closeVictory, get boss() { return boss && { name:boss.def.name, hp:boss.hp, armored:bossArmored() }; },
   tarotChoice, cardValue, get hand() { return save.hand; }, get pending() { return save.pending; }, get arc() { return arc; },
   get s() { return { state, lastRun, bossKills, won, endless, banksRun, R, depth:R * M_PER_ROW, hull, maxHull:maxHull(), cargo, cargoMult, banked, bankedTotal, score, balls:balls.length, loot:loot.length, pressureT, rows:rows.size, shop:{ ...shop }, stats:{ ...stats, pods:{ ...stats.pods } }, cleared:zoneCleared() }; },
