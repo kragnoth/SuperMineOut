@@ -672,7 +672,7 @@ let hull = 100, cargo = 0, cargoMult = 1, banked = 0, score = 0, combo = 0, best
 let pressureT = -1, dropping = null, shake = 0, hullFlash = 0, time = 0, crt = true, maxDepth = 0;
 let keys = {}, usingMouse = true, bot = null;
 let stats = {};
-function newStats() { return { t:0, blocks:0, ore:0, pods:{}, hullHits:0, chips:0, stalHits:0, drops:0, maxCores:1, maxStack:0, lastProg:0, laserShots:0, skimmed:0 }; }
+function newStats() { return { t:0, blocks:0, ore:0, pods:{}, hullHits:0, chips:0, stalHits:0, drops:0, maxCores:1, maxStack:0, lastProg:0, laserShots:0, skimmed:0, idle:0, readyWait:0, coreT:[0, 0, 0, 0], firstPod:-1, firstDrop:-1, death:'', unspent:[], shopSeen:0 }; }
 let banksRun = 0, reviveUsed = false, offers = [], banished = new Set(), rerollsFree = 0, rerollPaid = 0, banishLeft = 0, prevState = 'title', lastRun = null;
 let hazards = [], hazT = 8, gameTimers = [];
 function setTimeoutGame(fn, sec) { gameTimers.push({ fn, t:sec }); }
@@ -933,7 +933,7 @@ function collect(l) {
   burst(l.x, paddleY - 0.5, 10, l.kind === 'aether' ? [0.4, 0.9, 1] : [1, 0.8, 0.3], 3, 0.3);
 }
 function applyPU(k) {
-  const P = PU[k]; sfx.pod(); stats.pods[k] = (stats.pods[k] || 0) + 1;
+  const P = PU[k]; sfx.pod(); stats.pods[k] = (stats.pods[k] || 0) + 1; if (stats.firstPod < 0) stats.firstPod = stats.t;
   if (P.up) {
     let took = 0;
     for (const b of balls) if (upTotal(b) < MAX_UP) { b.up[k] = (b.up[k] || 0) + 1; if (k === 'pierce') b.pierceLeft++; restyle(b); took++; }
@@ -1062,7 +1062,7 @@ function updateHazards(dt) {
       if (Math.abs(h.x - px) < padW / 2 + 0.3) {
         gone(); burst(h.x, paddleY + 0.6, 30, [0.8, 0.7, 0.6], 7, 0.5); debris(h.x, paddleY + 0.5, 0x5a5048, 8);
         stats.stalHits++; shake = Math.max(shake, 0.7); hullFlash = 0.7; sfx.hull(); msg('ROCKFALL', '#ff5a3c', 0.7);
-        if (damageHull(12)) return;
+        if (damageHull(12, 'boulder')) return;
         continue;
       }
     }
@@ -1121,7 +1121,7 @@ function updateDrop(dt) {
     d.crushed++;
   }
   if (d.t >= 1) {
-    stats.drops++; R += DROP; rigY = -R; for (let i = 0; i < lv('drillbay'); i++) setTimeoutGame(() => launchDrill(rnd(-HALF + 1.5, HALF - 1.5)), 0.6 + i * 0.8); const carry = d.carry; dropping = null; ensureRows(); dockNew(carry);
+    stats.drops++; if (stats.firstDrop < 0) stats.firstDrop = stats.t; R += DROP; rigY = -R; for (let i = 0; i < lv('drillbay'); i++) setTimeoutGame(() => launchDrill(rnd(-HALF + 1.5, HALF - 1.5)), 0.6 + i * 0.8); const carry = d.carry; dropping = null; ensureRows(); dockNew(carry);
     maxDepth = Math.max(maxDepth, R * M_PER_ROW);
     if (R % JUNCTION_EVERY === 0) openJunction();
   }
@@ -1132,11 +1132,11 @@ function msg(text, color = '#e9d3a4', dur = 1.2) {
   const m = document.getElementById('msg'); m.textContent = text; m.style.color = color; m.style.opacity = 1;
   clearTimeout(msg.t); msg.t = setTimeout(() => m.style.opacity = 0, dur * 1000);
 }
-function damageHull(amt) {                    // returns true if the rig is lost
+function damageHull(amt, cause = 'last core') {   // returns true if the rig is lost
   hull -= amt * (1 - 0.1 * mr('brace')) * Math.max(0.2, 1 + A('dmg'));
   if (hull > 0) return false;
   if ((mr('revive') || A('revive') > 0) && !reviveUsed) { reviveUsed = true; hull = maxHull() * (mr('revive') ? 0.5 : 0.3); msg('EMERGENCY BALLAST', '#ff8ab0', 1.4); sfx.pod(); return false; }
-  gameOver(); return true;
+  stats.death = cause; gameOver(); return true;
 }
 function hullHit() {
   stats.hullHits++; sfx.hull(); shake = 1.0; hullFlash = 1;
@@ -1220,7 +1220,8 @@ function reroll() {
   rollOffers(); tone(400, 0.1, 'square', 0.08, 800); renderShop();
 }
 function banishOffer(i) { if (banishLeft <= 0 || !offers[i]) return; banished.add(offers[i]); banishLeft--; offers[i] = null; offers[i] = drawOffer(); noise(0.2, 0.2, 900); renderShop(); }
-function closeShop() { document.getElementById('ovShop').classList.remove('on'); state = 'play'; msg('DESCEND', '#ff9a3c', 0.8); }
+function closeShop() {
+  stats.unspent.push(banked); stats.shopSeen++; document.getElementById('ovShop').classList.remove('on'); state = 'play'; msg('DESCEND', '#ff9a3c', 0.8); }
 
 // ---- foundry UI
 let refundArmed = false;
@@ -1426,6 +1427,10 @@ function update(dt) {
   if (keys['d'] || keys['arrowright']) { pxTarget = px + 18 * dt * 3; usingMouse = false; }
   if (bot) botStep(dt);
   stats.t += dt;
+  // pacing telemetry (used by the logic sims): dead time, waiting on clamps, how many cores are in play
+  if (stats.t - stats.lastProg > 4 && !dropping) stats.idle += dt;
+  if (pressureT >= 0) stats.readyWait += dt;
+  stats.coreT[balls.length <= 1 ? 0 : balls.length <= 3 ? 1 : balls.length <= 7 ? 2 : 3] += dt;
   pxTarget = clamp(pxTarget, -lim, lim);
   const prevPx = px;
   px = usingMouse ? lerp(px, pxTarget, 1 - Math.exp(-dt * 30)) : clamp(lerp(px, pxTarget, 1 - Math.exp(-dt * 20)), -lim, lim);
@@ -1460,7 +1465,7 @@ function update(dt) {
       const s = Math.hypot(b.vx, b.vy) || 1, k = curSpeed() * b.boost / s; b.vx *= k; b.vy *= k;
       if (Math.random() < 0.6) spark(b.x, b.y, 0.3, rnd(-0.5, 0.5), rnd(-0.5, 0.5), b.boost > 1.05 ? [0.6, 1, 0.4] : b.col, 0.25);
     }
-    if (b.lost) { removeBall(b); burst(b.x, rigY + 0.8, 20, [1, 0.6, 0.2], 6, 0.4); if (balls.length && !dropping) { hullFlash = 0.35; shake = Math.max(shake, 0.3); stats.chips++; if (damageHull(4 * Math.max(0, 1 + A('chip')))) return; } }
+    if (b.lost) { removeBall(b); burst(b.x, rigY + 0.8, 20, [1, 0.6, 0.2], 6, 0.4); if (balls.length && !dropping) { hullFlash = 0.35; shake = Math.max(shake, 0.3); stats.chips++; if (damageHull(4 * Math.max(0, 1 + A('chip')), 'missed cores')) return; } }
   }
   if (!dropping && balls.length === 0) hullHit();
   stats.maxCores = Math.max(stats.maxCores, balls.length); for (const b of balls) stats.maxStack = Math.max(stats.maxStack, upTotal(b));
