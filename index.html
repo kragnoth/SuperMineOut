@@ -104,7 +104,7 @@
   </div></div>
 
   <div class="ov" id="ovFoundry"><div class="panel" style="max-width:calc(var(--u)*620);padding:calc(var(--u)*10) calc(var(--u)*14)">
-    <h2 style="margin-bottom:calc(var(--u)*2)">THE FOUNDRY</h2>
+    <h2 style="margin-bottom:calc(var(--u)*2)">THE FOUNDRY <span class="dim" style="font-size:calc(var(--u)*16)">— upgrades for every future descent</span></h2>
     <p style="margin:0 0 calc(var(--u)*6)">Scrip <span class="gold" id="fScrip">0</span> <span class="dim">· permanent upgrades · every rank bought raises all prices 10% · refund any time · <span id="fSave"></span></span></p>
     <div id="fList" class="fgrid"></div>
     <span class="btn" id="bRefund">REFUND ALL</span><span class="btn" id="bFBack">BACK [ESC]</span>
@@ -114,6 +114,7 @@
     <h2 class="red">RIG LOST</h2>
     <p id="oText"></p>
     <span class="btn" id="bRetry">DESCEND AGAIN [R]</span><span class="btn" id="bFoundry2">FOUNDRY [F]</span>
+    <p class="dim" style="font-size:calc(var(--u)*14)">Workshop upgrades die with the rig. Spend scrip in the Foundry: those upgrades carry into every future descent.</p>
   </div></div>
 
   <div class="ov" id="ovPause"><div class="panel"><h2>PAUSED</h2><span class="btn" id="bResume">RESUME [P]</span></div></div>
@@ -164,6 +165,8 @@ const SHOP = [
   { k:'luck',   name:'SEISMIC SCANNER', desc:'+25% power-up drop rate',           max:4, base:400, mul:1.7 },
   { k:'drillbay',name:'DRILL BAY',      desc:'free Mega Drill after every drop',  max:2, base:900, mul:2.0 },
   { k:'clamps', name:'HEAVY CLAMPS',    desc:'+8s before the clamps auto-release', max:3, base:250, mul:1.6 },
+  { k:'skimmer',name:'SKIMMER PANEL',   desc:'wall panel roams the shaft, magnets loose ore into the hold (2nd: both walls, 3rd: wider pull)', max:3, base:500, mul:1.8 },
+  { k:'laser',  name:'LASER PANEL',     desc:'wall panel roams the shaft, lasers through the rock (2nd: both walls, 3rd: faster, harder)', max:3, base:650, mul:1.9 },
 ];
 const REPAIR_COST = 150;
 let shop = {}, bankedTotal = 0;
@@ -573,7 +576,7 @@ let hull = 100, cargo = 0, cargoMult = 1, banked = 0, score = 0, combo = 0, best
 let pressureT = -1, dropping = null, shake = 0, hullFlash = 0, time = 0, crt = true, maxDepth = 0;
 let keys = {}, usingMouse = true, bot = null;
 let stats = {};
-function newStats() { return { t:0, blocks:0, ore:0, pods:{}, hullHits:0, chips:0, stalHits:0, drops:0, maxCores:1, maxStack:0, lastProg:0 }; }
+function newStats() { return { t:0, blocks:0, ore:0, pods:{}, hullHits:0, chips:0, stalHits:0, drops:0, maxCores:1, maxStack:0, lastProg:0, laserShots:0, skimmed:0 }; }
 let banksRun = 0, reviveUsed = false, offers = [], banished = new Set(), rerollsFree = 0, rerollPaid = 0, banishLeft = 0, prevState = 'title', lastRun = null;
 let hazards = [], hazT = 8, gameTimers = [];
 function setTimeoutGame(fn, sec) { gameTimers.push({ fn, t:sec }); }
@@ -695,7 +698,7 @@ function destroyBlock(r, c, reward, src = null) {
   if (ty === T.GOLD) { const n = 2 + (Math.random() < 0.4) + pro; for (let i = 0; i < n; i++) spawnLoot(x, y, 'gold'); }
   if (ty === T.AETHER) { for (let i = 0; i <= (pro >> 1); i++) spawnLoot(x, y, 'aether'); }
   if (ty !== T.GOLD && ty !== T.AETHER && pro && Math.random() < 0.06 * pro) spawnLoot(x, y, 'gold');
-  const podChance = src === 'drill' ? 0.006 : ({ [T.AETHER]:0.25, [T.GOLD]:0.05, [T.GAS]:0.1 })[ty] ?? 0.014;
+  const podChance = (src === 'drill' || src === 'laser') ? 0.006 : ({ [T.AETHER]:0.25, [T.GOLD]:0.05, [T.GAS]:0.1 })[ty] ?? 0.014;
   if (Math.random() < podChance * (1 + 0.25 * lv('luck') + 0.1 * mr('luck'))) spawnLoot(x, y, 'pu', rollPU());
   if (ty === T.GAS) explode(r, c);
 }
@@ -863,6 +866,70 @@ function launchDrill(cx = px) {
 const stalGeo = new THREE.ConeGeometry(0.42, 1.7, 6); stalGeo.rotateX(Math.PI);
 const warnMat = new THREE.MeshBasicMaterial({ color:0xff3020 });
 const warnGeo = new THREE.BoxGeometry(1.1, 0.12, 1.3);
+// ---- roaming wall panels: skimmers suck loose ore into the hold, lasers fire across a row
+let panels = [];
+const panelGeo = new THREE.BoxGeometry(0.55, 1.3, 1.1), stripGeo = new THREE.BoxGeometry(0.12, 0.9, 0.1);
+const beamGeo = new THREE.BoxGeometry(1, 0.14, 0.14);
+const beamMat = new THREE.MeshBasicMaterial({ color:0xff2a1a, blending:THREE.AdditiveBlending, transparent:true, depthWrite:false });
+const PANEL_COL = { skimmer:0xc86aff, laser:0xff3a2a };
+function syncPanels() {
+  for (const p of panels) scene.remove(p.mesh, p.strip, p.beam);
+  panels = [];
+  const sideOf = { laser:-1, skimmer:1 };                       // level 1: lasers left wall, skimmers right wall
+  for (const kind of ['laser', 'skimmer']) {
+    const n = lv(kind) >= 2 ? 2 : lv(kind);
+    for (let i = 0; i < n; i++) {
+      const side = i === 0 ? sideOf[kind] : -sideOf[kind];
+      const mesh = new THREE.Mesh(panelGeo, metalMat), strip = new THREE.Mesh(stripGeo, new THREE.MeshBasicMaterial({ color:PANEL_COL[kind] }));
+      const beam = new THREE.Mesh(beamGeo, beamMat); beam.visible = false;
+      scene.add(mesh, strip, beam);
+      // lasers and skimmers on the same wall keep to different heights
+      panels.push({ kind, side, y:rigY - rnd(3, 12), ty:rigY - rnd(3, 12), wait:rnd(0, 1), cd:rnd(0.5, 2), beamT:0, mesh, strip, beam, pull:0 });
+    }
+  }
+}
+function updatePanels(dt) {
+  for (const p of panels) {
+    const x = p.side * (HALF + 0.3), L = lv(p.kind);
+    if (p.wait > 0) p.wait -= dt;
+    else {
+      const d = p.ty - p.y, step = 3.5 * dt;
+      if (Math.abs(d) <= step) { p.y = p.ty; p.wait = rnd(0.6, 2.2); p.ty = rigY - rnd(2.5, 14); }
+      else p.y += Math.sign(d) * step;
+    }
+    if (p.y > rigY - 2) p.y = rigY - 2;                         // ride down with the rig
+    if (p.kind === 'skimmer') {
+      const rad = 2.8 + (L >= 3 ? 2 : 0); p.pull = 0;
+      for (const l of [...loot]) {
+        if (l.kind === 'pu') continue;                          // skimmers only take ore, pods are yours to catch
+        const dx = x - l.x, dy = p.y - l.y, d = Math.hypot(dx, dy);
+        if (d > rad) continue;
+        p.pull++;
+        const k = Math.min(1, 6 * dt); l.x += dx * k; l.y += dy * k; l.vy = 0; l.vx = 0;
+        if (Math.random() < 0.5) spark(lerp(l.x, x, Math.random()), lerp(l.y, p.y, Math.random()), 0.7, 0, 0, [0.7, 0.35, 1], 0.2);
+        if (d < 0.6) { collect(l); stats.skimmed++; scene.remove(l.mesh, l.glow); loot.splice(loot.indexOf(l), 1); }
+      }
+    } else {
+      p.cd -= dt * (L >= 3 ? 1.6 : 1);
+      if (p.cd <= 0) {
+        p.cd = 2.4; stats.laserShots++;
+        const row = Math.round(-p.y), maxHits = 3 + L, dmg = L >= 3 ? 2 : 1;
+        let hits = 0, endX = -x;
+        for (let i = 0; i < COLS; i++) {
+          const c = p.side < 0 ? i : COLS - 1 - i;
+          if (!cell(row, c)) continue;
+          damageBlock(row, c, dmg, true, 'laser');
+          if (++hits >= maxHits) { endX = cellX(c); break; }
+        }
+        const y = -row; p.beamT = 0.18; p.beamY = y; p.beamX0 = x; p.beamX1 = endX;
+        for (let s2 = 0; s2 < 16; s2++) spark(lerp(x, endX, Math.random()), y + rnd(-0.1, 0.1), 0.6, rnd(-1, 1), rnd(0, 2), [1, 0.3, 0.15], 0.3);
+        flashes.push({ x:(x + endX) / 2, y, col:[2, 0.4, 0.2], rad:6, life:0.18, max:0.18 });
+        tone(1400, 0.1, 'sawtooth', 0.05, 300);
+      }
+    }
+    p.beamT = Math.max(0, p.beamT - dt);
+  }
+}
 function updateHazards(dt) {
   for (const g of [...gameTimers]) { g.t -= dt; if (g.t <= 0) { gameTimers.splice(gameTimers.indexOf(g), 1); g.fn(); } }
   if (R >= 20 && !dropping) {
@@ -1026,6 +1093,7 @@ function buyOffer(i) {
   banked -= c; shop[k] = lv(k) + 1; tone(660, 0.08, 'square', 0.1, 990);
   if (k === 'armor') hull += 20;
   if (STARTER_KEYS.includes(k)) applyStarter(k);
+  if (k === 'skimmer' || k === 'laser') syncPanels();
   offers[i] = null; offers[i] = drawOffer(); renderShop();
 }
 function repair() { if (hull >= maxHull() || banked < REPAIR_COST) return deny(); banked -= REPAIR_COST; hull = Math.min(maxHull(), hull + 40); tone(500, 0.08, 'square', 0.1, 700); renderShop(); }
@@ -1043,8 +1111,18 @@ function refreshMetaUI() {
   const t = document.getElementById('tScrip'); if (t) t.textContent = save.scrip;
   if (document.getElementById('ovFoundry').classList.contains('on')) renderFoundry();
 }
-function openFoundry() { prevState = state; state = 'foundry'; refundArmed = false; renderFoundry(); document.getElementById('ovFoundry').classList.add('on'); }
-function closeFoundry() { document.getElementById('ovFoundry').classList.remove('on'); state = prevState; refreshMetaUI(); }
+let hiddenOv = [];
+function openFoundry() {
+  prevState = state; state = 'foundry'; refundArmed = false;
+  hiddenOv = ['ovTitle', 'ovOver'].filter(id => document.getElementById(id).classList.contains('on'));
+  for (const id of hiddenOv) document.getElementById(id).classList.remove('on');
+  renderFoundry(); document.getElementById('ovFoundry').classList.add('on');
+}
+function closeFoundry() {
+  document.getElementById('ovFoundry').classList.remove('on'); state = prevState;
+  for (const id of hiddenOv) document.getElementById(id).classList.add('on'); hiddenOv = [];
+  refreshMetaUI();
+}
 function renderFoundry() {
   document.getElementById('fScrip').textContent = save.scrip;
   document.getElementById('fSave').textContent = Store.mode === 'cloud' ? 'saved to your account' : 'saved in this browser';
@@ -1076,6 +1154,7 @@ function reset() {
   for (const d of drills) scene.remove(d.mesh, d.glow); drills = [];
   stats = newStats(); banksRun = 0; reviveUsed = false; offers = []; banished = new Set(); rerollsFree = mr('reroll'); banishLeft = mr('banish');
   for (const h of hazards) scene.remove(h.mesh, h.marker); hazards = []; hazT = 8; gameTimers = [];
+  shop = {}; syncPanels();
   banked = 100 * mr('stake'); hull = maxHull(); padW = basePadW();
   ensureRows(); dockNew(mr('seed') ? { split:1 } : starterUp());
   if (mr('twin')) dockNew();
@@ -1199,6 +1278,7 @@ function update(dt) {
   if (dropping) updateDrop(dt);
   updateDrills(dt);
   updateHazards(dt);
+  updatePanels(dt);
   if (state !== 'play') return;
 
   // balls (fixed substeps so the core can't tunnel)
@@ -1305,6 +1385,13 @@ function render(dt) {
     if (l.kind !== 'pu') { l.mesh.rotation.y += dt * l.spin; l.mesh.rotation.x += dt * 2; }
   }
   rig.scale.x = padW / PW;
+  for (const p of panels) {
+    const x = p.side * (HALF + 0.3);
+    p.mesh.position.set(x, p.y, 0.3); p.strip.position.set(x - p.side * 0.29, p.y, 0.4);
+    p.strip.material.color.setHex(p.kind === 'laser' ? (p.cd < 0.4 && ((time * 12) | 0) % 2 ? 0xffffff : 0xff3a2a) : (p.pull ? 0xffffff : 0xc86aff));
+    p.beam.visible = p.beamT > 0;
+    if (p.beamT > 0) { p.beam.position.set((p.beamX0 + p.beamX1) / 2, p.beamY, 0.6); p.beam.scale.set(Math.abs(p.beamX1 - p.beamX0) || 0.01, 0.6 + p.beamT * 4, 1); }
+  }
   for (const h of hazards) { h.marker.position.set(h.x, rigY + 1.1, 0.1); h.marker.visible = h.warn > 0 && ((time * 10) | 0) % 2 === 0; h.mesh.position.set(h.x, h.y, 0); }
   for (const d of drills) { d.mesh.position.set(cellX(d.c), d.y, 0.3); d.mesh.rotation.y += dt * 25; d.glow.position.set(cellX(d.c), d.y - 1.1, 0.8); }
 
@@ -1354,6 +1441,7 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 window.__ab = {
+  giveShop(k, n = 1) { shop[k] = n; syncPanels(); },
   get s() { return { state, lastRun, banksRun, R, depth:R * M_PER_ROW, hull, maxHull:maxHull(), cargo, cargoMult, banked, bankedTotal, score, balls:balls.length, loot:loot.length, pressureT, rows:rows.size, shop:{ ...shop }, stats:{ ...stats, pods:{ ...stats.pods } }, cleared:zoneCleared() }; },
   start, setBot(skill) { bot = skill == null ? null : { skill }; },
   tick(dt) { time += dt; if (state === 'play') update(dt); },

@@ -27,6 +27,7 @@ python3 -m http.server   # then open http://localhost:8000
 - **Instant pods**: Mega Drill `M`, Wide Rig `W`, Magnet Surge `U`, Hull Patch `+`.
 - **Elevator junction** every 60m: bank cargo (credits, +25 hull) or push on (+0.5× cargo multiplier).
 - **Surface Workshop** (in-run, credits, resets each run): 4 random offer cards in the Vampire Survivors level-up style, with reroll (escalating cost), banish, and a fixed repair.
+- **Wall panels** (workshop): roam up and down the shaft walls. *Skimmer* panels magnet loose ore into the hold; *Laser* panels fire across their row, cutting through 3–6 blocks. Level 2 adds a panel on the other wall; level 3 boosts pull radius, or fire rate and damage.
 - **The Foundry** (permanent, scrip): earned on death from banked credits, unbanked salvage and depth. Rank *n* costs `base × 1.6 × (n+1)` plus a global fee that grows 10% with every rank bought anywhere. Full refund at any time. Secret upgrades (Reroll, Banish, Fission Seed, Twin Core, Emergency Ballast) unlock through achievements.
 - **Danger**: missed cores chip the hull (−4) while others are still in play; losing the last core costs −25 and wipes core upgrades; rockfall (telegraphed red marker) starts at 40m and speeds up with depth.
 
@@ -39,6 +40,7 @@ Saves go to `localStorage`. When the page runs as a claude.ai artifact, they als
 ```
 node sim/sim.mjs index.html <runs> <skill 0..1> [bank|push|mixed] [maxMinutes]
 META=1 node sim/sim.mjs index.html 60 0.6 bank 30   # chain runs and spend scrip in the Foundry between them
+GIVE=laser:3,skimmer:3 node sim/sim.mjs index.html 6 0.6   # force workshop upgrades on at the start of each run
 ```
 
 Each run prints one JSON line (end reason, depth, time, banked, pods caught, workshop buys, Foundry buys, unlocks), followed by an average. Runs flag `ERROR` on an exception and `STUCK` after 60s without breaking a block.

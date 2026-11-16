@@ -54,6 +54,7 @@ const DT = 1 / 60, runs = +runsArg, skill = +skillArg, maxT = +maxMinArg * 60;
 const results = [];
 for (let r = 0; r < runs; r++) {
   ab.start(); ab.setBot(skill);
+  for (const g of (process.env.GIVE || '').split(',').filter(Boolean)) { const [k, n] = g.split(':'); ab.giveShop(k, +n || 1); } // e.g. GIVE=laser:3,skimmer:2
   let t = 0, err = null, stuck = false, junctions = 0, buys = [];
   const depthAt = {};
   try {
@@ -88,7 +89,7 @@ for (let r = 0; r < runs; r++) {
     if (!cand.length || ab.metaCost(cand[0].k) > ab.save.scrip) break;
     foundry.push(cand[0].k); ab.metaBuy(cand[0].k);
   }
-  results.push({ scripEarned:s.lastRun?.earned, scripBank:ab.save.scrip, ranks:Object.values(ab.save.ranks).reduce((a, b) => a + b, 0), foundry:foundry.join(','), unlocked:s.lastRun?.fresh?.join(','), chips:s.stats.chips, stal:s.stats.stalHits, run:r, end:err ? 'ERROR' : stuck ? 'STUCK' : s.state === 'over' ? 'died' : 'timeout', min:+(t / 60).toFixed(1), depth:s.depth,
+  results.push({ scripEarned:s.lastRun?.earned, scripBank:ab.save.scrip, ranks:Object.values(ab.save.ranks).reduce((a, b) => a + b, 0), foundry:foundry.join(','), unlocked:s.lastRun?.fresh?.join(','), chips:s.stats.chips, stal:s.stats.stalHits, laserShots:s.stats.laserShots, skimmed:s.stats.skimmed, run:r, end:err ? 'ERROR' : stuck ? 'STUCK' : s.state === 'over' ? 'died' : 'timeout', min:+(t / 60).toFixed(1), depth:s.depth,
     bankedTotal:s.bankedTotal, cargoLost:s.cargo, ore:s.stats.ore, blocks:s.stats.blocks, drops:s.stats.drops, hullHits:s.stats.hullHits,
     maxCores:s.stats.maxCores, maxStack:s.stats.maxStack, pods:s.stats.pods, buys:buys.join(','), depthByMin:Object.values(depthAt).join(' '), err });
 }
