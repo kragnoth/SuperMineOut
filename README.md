@@ -26,6 +26,9 @@ python3 -m http.server   # then open http://localhost:8000
 
 - **Spring rig**: the rig hangs from a trolley on the bridge by a coil spring. Aim lower with the mouse (or W/S) to let it down, with springy overshoot and a bounce on every core impact. Base reach is 1 cell; the Foundry's *Winch Cable* adds 0.9 per rank (up to 4.6), and the workshop's *Servo Winch* stiffens the spring.
 - **Core upgrades** (pods, stack up to 8 per core, inherited by every split): Fission `X`, Strength `S`, Pierce `P`, Blast `B`, Arc `Z`, Prospector `$`. Each Fission pod splits every live core, and Fission cores can bud a child each time they break a block (8% per level), up to 8 cores.
+- **Evolutions**: two upgrades at 2+ on the same core fuse, and the evolution is inherited by splits. *Storm* (Blast+Arc: every arc strike detonates), *Drill Lance* (Pierce+Strength: plows through 10 blocks per bounce, +2 damage), *Midas* (Prospector+Fission: any block may turn to gold), *Nova* (Strength+Blast: 60% wider, harder blasts), *Swarm* (Fission+Arc: arc kills can bud new cores).
+- **Wyrm bosses**: Rock-Wyrm at 80m, Fungal at 160m, Clockwork at 260m, and **The Eldritch Heart** at 360m. Each one bores through the rock, hunts your cores, churns up rubble, eats power-up pods drifting past (regrowing a plate), and lunges at the rig after a red-eye telegraph (12 hull). Break the armor plates, then the exposed, slower head. Clamps stay locked until it dies. Each kill drops ore and pods and pays 150 scrip at run end. Killing the Heart wins the run (×1.5 scrip): **Surface** to bank everything, or go **Endless**, where wyrms return every 120m, stronger each lap.
+- **Spring slam**: if the rig is driving down when a core hits the bumper, it becomes a power shot (+35% speed, +2 damage on the next hit).
 - **Instant pods**: Mega Drill `M`, Wide Rig `W`, Magnet Surge `U`, Catch `C` (cores stick to the bumper for 20s; click to release), Hull Patch `+`.
 - **Grapple Bumper** (workshop): cores stick where they land on the bumper and leave at that angle when you click. Level 1 auto-releases after 4s; level 2 holds indefinitely.
 - **Elevator junction** every 60m: bank cargo (credits, +25 hull) or push on (+0.5× cargo multiplier).
@@ -49,9 +52,11 @@ GIVE=laser:3,skimmer:3 node sim/sim.mjs index.html 6 0.6   # force workshop upgr
 
 Each run prints one JSON line (end reason, depth, time, banked, pods caught, workshop buys, Foundry buys, unlocks), followed by an average. Runs flag `ERROR` on an exception and `STUCK` after 60s without breaking a block.
 
-Balance snapshot for v0.4 (60 chained runs per skill level):
+Older balance snapshot for v0.4 (60 chained runs per skill level):
 
 | Bot skill | First 10 runs | Last 10 runs | Foundry ranks after 60 runs |
 |---|---|---|---|
 | 0.60 | 216m, 9.2 min | 808m, 19.9 min | 39 / 47 |
 | 0.35 | 146m, 8.4 min | 311m, 10.2 min | 23 / 47 |
+
+Session snapshot for v0.9 (50 chained runs, bot skill improving from 0.30 to 0.55, Foundry spending and tarot between runs): runs 1–10 had no wins (median 7 min, 216m); the first win came at run 13; runs 26–50 won 20 of 25 with a median winning run of about 12 min. Evolutions appeared in 76% of runs, and dead time (no block or boss hit for 4+ s) was about 6%.

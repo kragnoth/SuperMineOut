@@ -84,13 +84,14 @@
     <div class="bc" id="hZone">STRUCTURE <span class="bar"><i id="hClr"></i><b style="left:65%"></b></span> <span id="hClrT">0%</span></div>
     <div id="msg"></div>
     <div id="chain"></div>
+    <div id="bossBar" style="position:absolute;left:0;right:0;top:calc(var(--u)*56);text-align:center;font-size:calc(var(--u)*17);display:none"><span id="bossName" class="red"></span> <span class="bar" style="width:calc(var(--u)*160)"><i id="bossHp" style="background:#ff5a3c"></i></span> <span id="bossNote" class="dim"></span></div>
   </div>
 
   <div class="ov on" id="ovTitle"><div class="panel">
     <h1>ABYSSAL BREAKER</h1>
     <p class="dim">Your boring rig hangs over a lightless shaft. The Wrecking Core is the only light down here.</p>
     <p>Break the rock below you. When the <span class="grn">structure</span> under the rig is 65% cleared, the clamps release and you can drop deeper.</p>
-    <p>Catch power-up pods. Core upgrades stack up to 8 per core and are inherited by every split: <span style="color:#ff7a2a">X</span> Fission (splits now, then cores keep budding as they break blocks, up to 8), <span style="color:#ff3a3a">S</span>trength, <span style="color:#dfe9ff">P</span>ierce, <span style="color:#ffae2a">B</span>last, <span style="color:#5ae6ff">Z</span> arc, <span style="color:#ffd84a">$</span> prospector. Plus <span style="color:#c8c8c8">M</span> mega drill, <span style="color:#9cff6a">W</span>ide rig, <span style="color:#c86aff">U</span> magnet surge, <span style="color:#7affd4">C</span> catch (cores stick, click to release), <span style="color:#ff8ab0">+</span> hull. Bank at junctions to buy run upgrades in the workshop. When the rig is lost you earn <span class="gold">scrip</span> for permanent upgrades in the Foundry.</p>
+    <p>Catch power-up pods. Core upgrades stack up to 8 per core and are inherited by every split: <span style="color:#ff7a2a">X</span> Fission (splits now, then cores keep budding as they break blocks, up to 8), <span style="color:#ff3a3a">S</span>trength, <span style="color:#dfe9ff">P</span>ierce, <span style="color:#ffae2a">B</span>last, <span style="color:#5ae6ff">Z</span> arc, <span style="color:#ffd84a">$</span> prospector. Plus <span style="color:#c8c8c8">M</span> mega drill, <span style="color:#9cff6a">W</span>ide rig, <span style="color:#c86aff">U</span> magnet surge, <span style="color:#7affd4">C</span> catch (cores stick, click to release), <span style="color:#ff8ab0">+</span> hull. Two upgrades at 2+ on one core <span class="grn">evolve</span> it (Storm, Drill Lance, Midas, Nova, Swarm). Wyrms guard 80m, 160m and 260m; the Eldritch Heart waits at 360m. Flick the rig down into a core to <b>SLAM</b> it. Bank at junctions to buy run upgrades in the workshop. When the rig is lost you earn <span class="gold">scrip</span> for permanent upgrades in the Foundry.</p>
     <p>Broken ore is pulled <b>up</b> to your magnetic hopper, so be under it when it arrives. Every 60m there's an elevator junction: bank your cargo or push your luck.</p>
     <div class="keys">
       MOUSE / A D ← → &nbsp; move rig · mouse height / W S &nbsp; lower it on its spring<br>
@@ -126,11 +127,18 @@
   </div></div>
 
   <div class="ov" id="ovOver"><div class="panel">
-    <h2 class="red">RIG LOST</h2>
+    <h2 class="red" id="oTitle">RIG LOST</h2>
     <p id="oText"></p>
     <div id="oTarot"></div>
     <div id="oButtons"><span class="btn" id="bRetry">DESCEND AGAIN [R]</span><span class="btn" id="bFoundry2">FOUNDRY [F]</span></div>
     <p class="dim" style="font-size:calc(var(--u)*14)">Workshop upgrades die with the rig. Spend scrip in the Foundry: those upgrades carry into every future descent.</p>
+  </div></div>
+
+  <div class="ov" id="ovWin"><div class="panel">
+    <h2 class="grn">THE ELDRITCH HEART IS BROKEN</h2>
+    <p>You reached the bottom of the shaft. Scrip for this run is multiplied ×1.5.</p>
+    <p><b>[S] SURFACE</b> — hoist all cargo and end the run as a victory.<br><b>[E] ENDLESS</b> — keep descending. Wyrms return every 120m, stronger each time.</p>
+    <span class="btn" id="bSurface">SURFACE [S]</span><span class="btn" id="bEndless">ENDLESS [E]</span>
   </div></div>
 
   <div class="ov" id="ovPause"><div class="panel"><h2>PAUSED</h2><span class="btn" id="bResume">RESUME [P]</span></div></div>
@@ -695,7 +703,9 @@ function botStep(dt) {
     for (const l of loot) { const sc = (l.kind === 'pu' ? 5 : 0) + l.y; if (l.y > paddleY - 6 && sc > ls) { ls = sc; lb = l; } }
     goal = lb ? lb.x : tgt ? tgt.x : null;
   }
-  for (const h of hazards) if (h.age > react) {
+  const threats = [...hazards.filter(h => h.age > react)];
+  if (boss && (boss.phase === 'tele' || boss.phase === 'lunge')) threats.push({ x:boss.phase === 'tele' ? px : boss.lx });
+  for (const h of threats) {
     const g = goal ?? pxTarget, gap = padW / 2 + 0.7;
     if (Math.abs(g - h.x) < gap) goal = h.x + (g >= h.x ? gap : -gap) * (Math.abs(h.x + gap) > HALF - padW / 2 ? -1 : 1);
   }
@@ -791,6 +801,7 @@ function destroyBlock(r, c, reward, src = null) {
   if (!reward) return;
   score += Math.round(DEF[ty].score * (1 + combo * 0.1)); stats.blocks++; stats.lastProg = stats.t;
   const pro = src && src.up ? (src.up.gold || 0) : 0;
+  if (src && src.up && src.up.evo_midas && Math.random() < 0.4) spawnLoot(x, y, 'gold');
   if (ty === T.GOLD) { const n = 2 + (Math.random() < 0.4) + pro; for (let i = 0; i < n; i++) spawnLoot(x, y, 'gold'); }
   if (ty === T.AETHER) { for (let i = 0; i <= (pro >> 1); i++) spawnLoot(x, y, 'aether'); }
   if (ty !== T.GOLD && ty !== T.AETHER && pro && Math.random() < 0.06 * pro) spawnLoot(x, y, 'gold');
@@ -818,7 +829,27 @@ function addBall(x, y, vx, vy, docked, up = {}) {
   const mesh = new THREE.Mesh(ballGeo, ballMat.clone()), glow = new THREE.Sprite(glowMats.ball.clone());
   glow.scale.setScalar(2.4); scene.add(mesh, glow);
   const b = { x, y, vx, vy, docked, mesh, glow, boost:1, up:{ ...up }, pierceLeft:up.pierce || 0, col:[1, 0.55, 0.2] };
-  restyle(b); balls.push(b); return b;
+  restyle(b); balls.push(b); if (stats.t !== undefined) checkEvo(b); return b;
+}
+// ---- evolutions: two upgrades at 3+ on one core fuse into something new (inherited by splits)
+const EVOS = {
+  storm:{ name:'STORM CORE', need:['blast', 'arc'],   col:[0.55, 0.95, 1.0], desc:'every arc strike detonates' },
+  lance:{ name:'DRILL LANCE', need:['pierce', 'str'], col:[0.95, 0.97, 1.0], desc:'plows through 10 blocks per bounce, +2 damage' },
+  midas:{ name:'MIDAS CORE', need:['gold', 'split'],  col:[1.0, 0.82, 0.25], desc:'any broken block may turn to gold' },
+  nova: { name:'NOVA CORE',  need:['str', 'blast'],   col:[1.0, 0.45, 0.2],  desc:'blasts are 60% wider and hit harder' },
+  swarm:{ name:'SWARM CORE', need:['split', 'arc'],   col:[0.75, 0.55, 1.0], desc:'arc kills can bud new cores' },
+};
+const evoOf = b => Object.keys(EVOS).filter(k => b.up['evo_' + k]);
+function checkEvo(b) {
+  for (const k in EVOS) {
+    const e = EVOS[k];
+    if (!b.up['evo_' + k] && e.need.every(n => (b.up[n] || 0) >= 2)) {
+      b.up['evo_' + k] = 1; restyle(b); stats.evos = (stats.evos || 0) + 1;
+      msg('EVOLUTION: ' + e.name, '#7affd4', 1.6); shake = Math.max(shake, 0.4);
+      burst(b.x, b.y, 60, e.col, 9, 0.7); flashes.push({ x:b.x, y:b.y, col:e.col.map(v => v * 2.5), rad:10, life:0.4, max:0.4 });
+      tone(330, 0.3, 'square', 0.12, 990); tone(495, 0.4, 'square', 0.1, 1485);
+    }
+  }
 }
 function restyle(b) {                       // core colour = blend of its upgrades
   let w = 1, col = [1, 0.55, 0.2];
@@ -827,7 +858,9 @@ function restyle(b) {                       // core colour = blend of its upgrad
   const n = upTotal(b);
   b.mesh.material.color.setRGB(0.75 + b.col[0] * 0.35, 0.75 + b.col[1] * 0.35, 0.7 + b.col[2] * 0.35);
   b.glow.material.color.setRGB(b.col[0], b.col[1], b.col[2]);
-  b.glow.scale.setScalar(2.4 + n * 0.22); b.mesh.scale.setScalar(1 + n * 0.07);
+  const ev = evoOf(b);
+  if (ev.length) { b.col = ev.reduce((c, k) => c.map((v, i) => v + EVOS[k].col[i]), [0, 0, 0]).map(v => v / ev.length); b.mesh.material.color.setRGB(1, 1, 1); b.glow.material.color.setRGB(...b.col); }
+  b.glow.scale.setScalar(2.4 + n * 0.22 + ev.length * 1.2); b.mesh.scale.setScalar(1 + n * 0.07 + ev.length * 0.15);
 }
 function removeBall(b) { scene.remove(b.mesh, b.glow); b.mesh.material.dispose(); b.glow.material.dispose(); balls.splice(balls.indexOf(b), 1); }
 function dockNew(up = starterUp()) { addBall(px, paddleY - 0.55 - BR - 0.02, 0, 0, true, up); }
@@ -852,13 +885,19 @@ function stepBall(b, dt) {
   // paddle (underside of the rig)
   const pBot = paddleY - 0.55;
   if (b.vy > 0 && b.y + BR >= pBot && b.y < pBot + 0.45 && Math.abs(b.x - px) <= padW / 2 + BR * 0.8) {
+    if (dropV > 3 && !dropping) {                    // spring slam: rig driving down into the core = power shot
+      b.boost = Math.max(b.boost, 1.35); b.slam = 1; stats.slams = (stats.slams || 0) + 1;
+      msg('SLAM', '#ffb347', 0.5); burst(b.x, pBot, 26, [1, 0.75, 0.3], 8, 0.4); shake = Math.max(shake, 0.3);
+      noise(0.15, 0.3, 1200); tone(140, 0.18, 'square', 0.2, 70);
+    }
     const off = clamp((b.x - px) / (padW / 2), -1, 1), a = minAngle(off * 1.05), s = curSpeed() * b.boost;
-    b.vx = s * Math.sin(a); b.vy = -s * Math.cos(a); b.y = pBot - BR; b.pierceLeft = b.up.pierce || 0;
+    b.vx = s * Math.sin(a); b.vy = -s * Math.cos(a); b.y = pBot - BR; b.pierceLeft = b.up.pierce || 0; b.lanceLeft = 10;
     if (catching()) { b.docked = true; b.held = true; b.holdX = clamp(b.x - px, -padW / 2, padW / 2); b.holdT = 0; tone(300, 0.08, 'triangle', 0.15, 600); combo = 0; return; }
     combo = 0; sfx.paddle(); burst(b.x, pBot, 8, [1, 0.8, 0.4], 4, 0.25); rigKick = 0.12; dropV -= 2.5;   // core impact compresses the spring
     return;
   }
   if (b.y - BR > rigY + 0.7) { b.lost = true; return; }
+  if (boss && hitBoss(b)) return;
   // voxel grid
   const c0 = Math.max(0, Math.floor(b.x - BR + HALF)), c1 = Math.min(COLS - 1, Math.floor(b.x + BR + HALF));
   const rA = Math.floor(-(b.y + BR) + 0.5), rB = Math.floor(-(b.y - BR) + 0.5);
@@ -873,14 +912,15 @@ function stepBall(b, dt) {
     if (!best || pen > best.pen) best = { r, c, nx, ny, dx, dy, d, pen };
   }
   if (best) {
-    const dmg = 1 + (b.up.str || 0) + (Math.random() < 0.1 * mr('might') ? 1 : 0), ty = cell(best.r, best.c);
+    let dmg = 1 + (b.up.str || 0) + (Math.random() < 0.1 * mr('might') ? 1 : 0) + (b.up.evo_lance ? 2 : 0) + (b.slam ? 2 : 0), ty = cell(best.r, best.c);
+    if (b.slam) { b.slam = 0; burst(b.x, b.y, 24, [1, 0.8, 0.4], 7, 0.4); shake = Math.max(shake, 0.25); }
     combo++; bestCombo = Math.max(bestCombo, combo);
     sfx.hit(combo, ty === T.BASALT);
     const killed = damageBlock(best.r, best.c, dmg, true, b);
     if (killed) fissionCheck(b);
     coreFx(b, best.r, best.c);
-    if (killed && b.pierceLeft > 0) {        // drill-point: plow through what it kills
-      b.pierceLeft--; burst(b.x, b.y, 6, [0.85, 0.92, 1], 5, 0.3); return;
+    if (killed && (b.pierceLeft > 0 || (b.up.evo_lance && b.lanceLeft > 0))) {   // drill-point / lance: plow through what it kills
+      if (b.pierceLeft > 0) b.pierceLeft--; else b.lanceLeft--; burst(b.x, b.y, 6, [0.85, 0.92, 1], 5, 0.3); return;
     }
     let n0, n1;
     if (best.d > 1e-5) { n0 = best.dx / best.d; n1 = best.dy / best.d; }
@@ -895,9 +935,9 @@ function stepBall(b, dt) {
 }
 // on-hit effects carried by the core
 function coreFx(b, r0, c0) {
-  const bl = b.up.blast || 0, arc = b.up.arc || 0, x0 = cellX(c0), y0 = -r0;
+  const bl = b.up.blast || 0, arc = (b.up.arc || 0) + (b.up.evo_storm ? 2 : 0), x0 = cellX(c0), y0 = -r0;
   if (bl) {
-    const rad = 0.9 + bl * 0.45, ri = Math.ceil(rad), d = 1 + (bl >> 2);
+    const rad = (0.9 + bl * 0.45) * (b.up.evo_nova ? 1.6 : 1), ri = Math.ceil(rad), d = 1 + (bl >> 2) + (b.up.evo_nova ? 1 : 0);
     for (let r = r0 - ri; r <= r0 + ri; r++) for (let c = c0 - ri; c <= c0 + ri; c++) {
       if (c < 0 || c >= COLS || (r === r0 && c === c0) || (r - r0) ** 2 + (c - c0) ** 2 > rad * rad) continue;
       if (cell(r, c)) damageBlock(r, c, d, true, b);
@@ -913,10 +953,146 @@ function coreFx(b, r0, c0) {
     for (let i = 0; i < arc && cand.length; i++) {
       const [r, c] = cand.splice((Math.random() * cand.length) | 0, 1)[0], x1 = cellX(c), y1 = -r;
       for (let s = 0; s <= 10; s++) { const t = s / 10; spark(lerp(x0, x1, t) + rnd(-0.15, 0.15), lerp(y0, y1, t) + rnd(-0.15, 0.15), 0.8, 0, 0, [0.4, 0.95, 1], 0.18); }
-      damageBlock(r, c, 1, true, b);
+      const killedArc = damageBlock(r, c, 1, true, b);
+      if (killedArc && b.up.evo_swarm && Math.random() < 0.15) splitOne(b);
+      if (b.up.evo_storm) {                           // storm: each strike detonates
+        for (let rr = r - 1; rr <= r + 1; rr++) for (let cc = Math.max(0, c - 1); cc <= Math.min(COLS - 1, c + 1); cc++) if (cell(rr, cc)) damageBlock(rr, cc, 1, true, b);
+        burst(x1, y1, 14, [0.55, 0.95, 1], 5, 0.3);
+      }
     }
     tone(1800 + Math.random() * 600, 0.05, 'sawtooth', 0.04, 900);
   }
+}
+
+// ------------------------------------------------------------ bosses: wyrms that bore through the rock
+const BOSSES = [
+  { at:80,  name:'ROCK-WYRM',          seg:6,  segHp:3, headHp:8,   col:[1.0, 0.85, 0.7], lunge:13 },
+  { at:160, name:'FUNGAL WYRM',        seg:8,  segHp:4, headHp:12,  col:[0.9, 0.7, 1.1],  lunge:12 },
+  { at:260, name:'CLOCKWORK WYRM',     seg:10, segHp:5, headHp:16, col:[1.1, 0.85, 0.5], lunge:11 },
+  { at:360, name:'THE ELDRITCH HEART', seg:12, segHp:6, headHp:24, col:[1.1, 0.6, 0.7],  lunge:10, final:true },
+];
+let boss = null, bossIdx = 0, endless = false, endlessNext = 0, bossKills = 0, won = false;
+const segGeo = new THREE.IcosahedronGeometry(0.5, 0), headGeo = new THREE.DodecahedronGeometry(0.72, 0), eyeGeo = new THREE.BoxGeometry(0.16, 0.12, 0.1);
+const bossTex = blockTex(T.BASALT, 1);
+function nextBossDepth() { return endless ? endlessNext : bossIdx < BOSSES.length ? BOSSES[bossIdx].at : Infinity; }
+function spawnBoss() {
+  const lap = endless ? Math.floor((endlessNext - 360) / 120) : 0;
+  const def = endless ? { ...BOSSES[(lap - 1 + BOSSES.length * 8) % BOSSES.length], final:false } : BOSSES[bossIdx];
+  const sc = 1 + lap * 0.5;
+  const mat = litMat(bossTex, { tint:def.col.map(v => v * 2.3) }), headMat = litMat(metalTex, { tint:def.col.map(v => v * 2.4), emis:[0, 0, 0] });
+  const segs = [];
+  for (let i = 0; i < def.seg; i++) { const mesh = new THREE.Mesh(segGeo, mat); scene.add(mesh); segs.push({ x:0, y:-(R + 20), hp:Math.round(def.segHp * sc), max:Math.round(def.segHp * sc), alive:true, mesh, hitT:0 }); }
+  const head = new THREE.Group(), hm = new THREE.Mesh(headGeo, headMat); head.add(hm);
+  const eyeMat = new THREE.MeshBasicMaterial({ color:0xff3020 });
+  for (const sx of [-0.28, 0.28]) { const e = new THREE.Mesh(eyeGeo, eyeMat); e.position.set(sx, -0.25, 0.62); head.add(e); }
+  scene.add(head);
+  const hx = rnd(-3, 3), hy = -(R + 22);
+  boss = { def, sc, t:rnd(0, 6), x:hx, y:hy, trail:[], segs, head, headMat, eyeMat, hp:Math.round(def.headHp * sc), max:Math.round(def.headHp * sc),
+    phase:'rise', lungeT:def.lunge * 0.7, tele:0, lungeTime:0, hitT:0, age:0 };
+  for (let i = 0; i < def.seg * 8 + 10; i++) boss.trail.push([hx, hy - i * 0.1]);
+  pressureT = -1;
+  msg(def.name + ' AWAKENS', '#ff5a3c', 2); sfx.boom(); shake = Math.max(shake, 1);
+  for (let i = 0; i < 2; i++) setTimeoutGame(() => spawnLoot(rnd(-4, 4), paddleY - 7, 'pu', i ? rollPU() : 'split'), 1 + i);   // a little help for the fight
+}
+function placeBlock(r, c, ty) {
+  const row = rows.get(r); if (!row || row.t[c] || (boss && Math.hypot(cellX(c) - boss.x, -r - boss.y) < 1.6)) return;
+  row.t[c] = ty; row.hp[c] = DEF[ty].hp;
+  const m = new THREE.Mesh(GEOS[(hash(c, r * 3) * GEOS.length) | 0], MATS[ty][0]); m.position.set(cellX(c), -r, 0); scene.add(m); row.mesh[c] = m;
+  debris(cellX(c), -r, DEF[ty].deb, 3);
+}
+function bossArmored() { return boss.segs.some(s2 => s2.alive); }
+function updateBoss(dt) {
+  const B = boss; if (!B) return;
+  B.t += dt; B.age += dt; B.hitT = Math.max(0, B.hitT - dt);
+  const base = -(R + 10), lim = HALF - 1.2;
+  let tx, ty, sp = (4.2 + B.sc * 0.4) * (bossArmored() ? 1 : 0.65);   // an exposed head slows down
+  if (B.phase === 'rise') { tx = 0; ty = base; if (B.y > base - 1) B.phase = 'roam'; sp = 7; }
+  else if (B.phase === 'roam') {
+    tx = Math.sin(B.t * 0.7) * lim; ty = base + Math.sin(B.t * 1.13) * 2.5;
+    // it hunts the nearest core (but stays below the rig until it lunges)
+    let near = null, nd = 1e9; for (const b of balls) if (!b.docked) { const d2 = Math.hypot(b.x - B.x, b.y - B.y); if (d2 < nd) { nd = d2; near = b; } }
+    if (near) { tx = lerp(tx, near.x, 0.6); ty = Math.min(lerp(ty, near.y, 0.6), paddleY - 4); }
+    // and churns up rubble so the arena never empties out
+    B.rubbleT = (B.rubbleT ?? 2) - dt;
+    if (B.rubbleT <= 0) { B.rubbleT = 1.6; for (let i = 0; i < 3; i++) placeBlock(R + 6 + ((Math.random() * 10) | 0), (Math.random() * COLS) | 0, Math.random() < 0.15 ? T.GOLD : T.STONE); }
+    B.lungeT -= dt; if (B.lungeT <= 0) { B.phase = 'tele'; B.tele = 1.5; tone(110, 0.9, 'sawtooth', 0.12, 220); }
+  } else if (B.phase === 'tele') { tx = B.x; ty = B.y; sp = 1; B.tele -= dt; if (B.tele <= 0) { B.phase = 'lunge'; B.lungeTime = 0; B.lx = px; } }
+  else if (B.phase === 'lunge') {
+    tx = B.lx; ty = paddleY - 0.4; sp = 10; B.lungeTime += dt;
+    if (Math.abs(B.x - px) < padW / 2 + 0.5 && B.y > paddleY - 1.1) {           // the bite
+      shake = 1; hullFlash = 0.8; sfx.hull(); burst(B.x, B.y, 40, [1, 0.4, 0.3], 8, 0.6); msg('THE WYRM BITES', '#ff5a3c', 0.9);
+      B.phase = 'retreat'; if (damageHull(12, 'wyrm')) return;
+    }
+    if (B.lungeTime > 1.6 || B.y > paddleY - 0.5) B.phase = 'retreat';
+  } else { tx = B.x; ty = base; sp = 6; if (B.y < base + 0.5) { B.phase = 'roam'; B.lungeT = B.def.lunge * rnd(0.8, 1.2); } }
+  const dx = tx - B.x, dy = ty - B.y, d = Math.hypot(dx, dy);
+  if (d > 0.01) { const st = Math.min(d, sp * dt); B.x += dx / d * st; B.y += dy / d * st; B.dir = Math.atan2(dy, dx); }
+  B.x = clamp(B.x, -lim - 0.6, lim + 0.6);
+  // trail -> segments follow the head
+  const last = B.trail[0];
+  if (Math.hypot(B.x - last[0], B.y - last[1]) > 0.1) { B.trail.unshift([B.x, B.y]); if (B.trail.length > B.segs.length * 8 + 12) B.trail.pop(); }
+  B.segs.forEach((s2, i) => { const p = B.trail[Math.min(B.trail.length - 1, (i + 1) * 8)]; s2.x = p[0]; s2.y = p[1]; s2.hitT = Math.max(0, s2.hitT - dt); });
+  // the head bores through rock
+  const hr = Math.round(-B.y), hc = Math.floor(B.x + HALF);
+  for (let r = hr - 1; r <= hr + 1; r++) for (let c = hc - 1; c <= hc + 1; c++)
+    if (c >= 0 && c < COLS && cell(r, c) && Math.hypot(cellX(c) - B.x, -r - B.y) < 1.0) destroyBlock(r, c, false);
+  // it eats power-up pods that drift past
+  for (const l of [...loot]) if (l.kind === 'pu' && Math.hypot(l.x - B.x, l.y - B.y) < 1.1) {
+    scene.remove(l.mesh, l.glow); loot.splice(loot.indexOf(l), 1);
+    const dead = B.segs.find(s2 => !s2.alive);
+    if (dead) { dead.alive = true; dead.hp = dead.max; scene.add(dead.mesh); }
+    msg('THE WYRM DEVOURS YOUR POD', '#ff7a4a', 1); tone(90, 0.4, 'sawtooth', 0.15, 50);
+  }
+}
+// core vs boss; returns true if the core bounced off a part of it
+function hitBoss(b) {
+  const B = boss; if (!B) return false;
+  const parts = [{ x:B.x, y:B.y, r:0.95, head:true }, ...B.segs.filter(s2 => s2.alive).map(s2 => ({ x:s2.x, y:s2.y, r:0.62, seg:s2 }))];
+  for (const p of parts) {
+    const dx = b.x - p.x, dy = b.y - p.y, d = Math.hypot(dx, dy);
+    if (d >= BR + p.r || d < 1e-5) continue;
+    const n0 = dx / d, n1 = dy / d, dot = b.vx * n0 + b.vy * n1;
+    if (dot < 0) { b.vx -= 2 * dot * n0; b.vy -= 2 * dot * n1; }
+    b.x = p.x + n0 * (BR + p.r + 0.01); b.y = p.y + n1 * (BR + p.r + 0.01);
+    let dmg = 1 + (b.up.str || 0) + (b.up.evo_lance ? 2 : 0) + (b.slam ? 2 : 0); b.slam = 0;
+    combo++; bestCombo = Math.max(bestCombo, combo); stats.lastProg = stats.t;
+    if (p.head) {
+      if (bossArmored()) { burst(b.x, b.y, 8, [0.8, 0.8, 0.9], 4, 0.25); tone(1200, 0.05, 'square', 0.06); return true; }   // clang
+      B.hp -= dmg; B.hitT = 0.15; burst(b.x, b.y, 16, [1, 0.4, 0.3], 6, 0.35); sfx.hit(combo, true);
+      if (B.hp <= 0) killBoss();
+    } else {
+      p.seg.hp -= dmg; p.seg.hitT = 0.15; burst(b.x, b.y, 10, [1, 0.7, 0.4], 5, 0.3); sfx.hit(combo, true);
+      if (p.seg.hp <= 0) {
+        p.seg.alive = false; scene.remove(p.seg.mesh); debris(p.seg.x, p.seg.y, 0x5a4a40, 10); noise(0.3, 0.25, 600);
+        spawnLoot(p.seg.x, p.seg.y, 'gold'); if (!bossArmored()) msg('ARMOR BROKEN — STRIKE THE HEAD', '#ffc43c', 1.3);
+      }
+    }
+    return true;
+  }
+  return false;
+}
+function killBoss() {
+  const B = boss; boss = null; bossKills++; stats.bossKills = (stats.bossKills || 0) + 1;
+  scene.remove(B.head); for (const s2 of B.segs) scene.remove(s2.mesh);
+  sfx.boom(); shake = 1.2; flashes.push({ x:B.x, y:B.y, col:[2.5, 1.6, 0.8], rad:16, life:0.8, max:0.8 });
+  burst(B.x, B.y, 160, [1, 0.6, 0.25], 14, 1.1); debris(B.x, B.y, 0x6a5a48, 30);
+  for (let i = 0; i < 10; i++) spawnLoot(B.x + rnd(-1, 1), B.y + rnd(-1, 1), 'gold');
+  for (let i = 0; i < 3; i++) spawnLoot(B.x, B.y, 'aether');
+  for (let i = 0; i < 2; i++) spawnLoot(B.x, B.y, 'pu', rollPU());
+  if (endless) endlessNext += 120; else bossIdx++;
+  if (B.def.final && !endless) { won = true; setTimeoutGame(openVictory, 2.2); msg('THE HEART IS BROKEN', '#7affd4', 2.2); return; }
+  msg(B.def.name + ' SLAIN — PATH CLEAR', '#9cff6a', 1.6);
+  pressureT = pressureMax();
+}
+function openVictory() {
+  if (state !== 'play') return;
+  state = 'victory'; save.rec.wins = (save.rec.wins || 0) + 1; persist();
+  document.getElementById('ovWin').classList.add('on');
+}
+function closeVictory(goEndless) {
+  document.getElementById('ovWin').classList.remove('on');
+  if (goEndless) { endless = true; endlessNext = R * M_PER_ROW + 120; state = 'play'; pressureT = pressureMax(); msg('ENDLESS DESCENT', '#ff9a3c', 1.4); }
+  else { bankedTotal += cargo; banked += cargo; cargo = 0; state = 'play'; gameOver(true); }
 }
 
 // ------------------------------------------------------------ loot
@@ -937,6 +1113,7 @@ function applyPU(k) {
   if (P.up) {
     let took = 0;
     for (const b of balls) if (upTotal(b) < MAX_UP) { b.up[k] = (b.up[k] || 0) + 1; if (k === 'pierce') b.pierceLeft++; restyle(b); took++; }
+    for (const b of balls) checkEvo(b);
     if (!took) { cargo += Math.round(25 * cargoMult); msg('CORES MAXED  +25', '#ffc43c', 0.8); return; }
     const lvl = Math.max(...balls.map(b => b.up[k] || 0));
     if (k === 'split') split();
@@ -1123,6 +1300,7 @@ function updateDrop(dt) {
   if (d.t >= 1) {
     stats.drops++; if (stats.firstDrop < 0) stats.firstDrop = stats.t; R += DROP; rigY = -R; for (let i = 0; i < lv('drillbay'); i++) setTimeoutGame(() => launchDrill(rnd(-HALF + 1.5, HALF - 1.5)), 0.6 + i * 0.8); const carry = d.carry; dropping = null; ensureRows(); dockNew(carry);
     maxDepth = Math.max(maxDepth, R * M_PER_ROW);
+    if (!boss && R * M_PER_ROW >= nextBossDepth()) spawnBoss();
     if (R % JUNCTION_EVERY === 0) openJunction();
   }
 }
@@ -1144,11 +1322,12 @@ function hullHit() {
   if (damageHull(25)) return;
   msg('HULL BREACH — CORE UPGRADES LOST', '#ff5a3c', 1.2); dockNew();
 }
-function gameOver() {
-  state = 'over'; hull = 0;
+function gameOver(win = false) {
+  state = 'over'; hull = win ? hull : 0;
+  document.getElementById('oTitle').innerHTML = win ? '<span class="grn">YOU REACHED THE CORE</span>' : 'RIG LOST';
   const depthM = R * M_PER_ROW, before = META.filter(metaUnlocked).map(m => m.k);
-  const parts = [['banked ×0.025', Math.round(bankedTotal * 0.025)], ['salvage ×0.01', Math.round(cargo * 0.01)], ['depth ×0.5', Math.round(depthM * 0.5)]];
-  const earned = Math.round(parts.reduce((a, p) => a + p[1], 0) * (1 + 0.1 * mr('greed')) * Math.max(0.1, 1 + A('scrip')));
+  const parts = [['banked ×0.025', Math.round(bankedTotal * 0.025)], ['salvage ×0.01', Math.round(cargo * 0.01)], ['depth ×0.5', Math.round(depthM * 0.5)], ['wyrms ×150', bossKills * 150]];
+  const earned = Math.round(parts.reduce((a, p) => a + p[1], 0) * (1 + 0.1 * mr('greed')) * Math.max(0.1, 1 + A('scrip')) * (win || won ? 1.5 : 1));
   const rc = save.rec;
   save.scrip += earned; rc.runs++; rc.totalScrip += earned; rc.bestDepth = Math.max(rc.bestDepth, depthM); rc.bestScore = Math.max(rc.bestScore, score + bankedTotal);
   rc.fission += stats.pods.split || 0; rc.maxCores = Math.max(rc.maxCores, stats.maxCores); rc.maxBanksRun = Math.max(rc.maxBanksRun, banksRun);
@@ -1158,7 +1337,7 @@ function gameOver() {
   persist();
   const pt = parts.map(p => `${p[0]} <span class="gold">${p[1]}</span>`).join(' + ') + (mr('greed') ? ` × greed ${(1 + 0.1 * mr('greed')).toFixed(1)}` : '') + (A('scrip') ? ` × arcana ${(1 + A('scrip')).toFixed(2)}` : '');
   document.getElementById('oText').innerHTML =
-    `Crushed at <b>${depthM}m</b> after ${Math.floor(stats.t / 60)}:${String(Math.floor(stats.t % 60)).padStart(2, '0')}.<br>`
+    `${win ? 'Surfaced from' : 'Crushed at'} <b>${depthM}m</b> after ${Math.floor(stats.t / 60)}:${String(Math.floor(stats.t % 60)).padStart(2, '0')}.<br>`
     + `Banked <span class="gold">${bankedTotal}</span> · Cargo lost <span class="red">${cargo}</span> · Score ${score + bankedTotal} · Best chain ${bestCombo}<br>`
     + `<span class="dim">${pt}</span><br><span class="big gold">+${earned} SCRIP</span> <span class="dim">(${save.scrip} total)</span>`
     + (fresh.length ? `<br><span class="grn">UNLOCKED IN THE FOUNDRY: ${fresh.map(m => m.name).join(', ')}</span>` : '');
@@ -1201,6 +1380,7 @@ function renderShop() {
     + (banishLeft > 0 ? ` <span class="dim">banishes left: ${banishLeft}</span>` : '');
 }
 function applyStarter(k) {                     // starter upgrades also apply to cores already in play (respecting the cap)
+  setTimeoutGame(() => balls.forEach(checkEvo), 0);
   for (const b of balls) { const room = MAX_UP - upTotal(b), cur = b.up[k] || 0; if (room > 0 && cur < lv(k)) { b.up[k] = Math.min(lv(k), cur + room); if (k === 'pierce') b.pierceLeft = b.up.pierce; restyle(b); } }
 }
 function buyOffer(i) {
@@ -1299,6 +1479,8 @@ function reset() {
   R = 0; rigY = 0; drop = dropV = dropTarget = 0; paddleY = 0; rockAnnounced = false; px = pxTarget = 0; firstRock = ZONE_OFF; shop = {}; bankedTotal = 0; magT = 0; catchT = 0; zoneLast = -1; zoneIdle = 0; hull = maxHull(); cargo = 0; cargoMult = 1; banked = 0; score = 0; combo = 0; bestCombo = 0;
   pressureT = -1; dropping = null; maxDepth = 0; wideT = 0; padW = basePadW();
   for (const d of drills) scene.remove(d.mesh, d.glow); drills = [];
+  if (boss) { scene.remove(boss.head); for (const s2 of boss.segs) scene.remove(s2.mesh); }
+  boss = null; bossIdx = 0; endless = false; endlessNext = 0; bossKills = 0; won = false;
   stats = newStats(); banksRun = 0; reviveUsed = false; offers = []; banished = new Set(); rerollsFree = mr('reroll'); banishLeft = mr('banish');
   for (const h of hazards) scene.remove(h.mesh, h.marker); hazards = []; hazT = 8; gameTimers = [];
   shop = {}; syncPanels();
@@ -1315,7 +1497,7 @@ function start() {
     state = 'over'; document.getElementById('ovOver').classList.add('on'); renderTarot(); return;
   }
   audioInit(); reset(); state = 'play';
-  for (const id of ['ovTitle', 'ovOver', 'ovJunction', 'ovPause', 'ovShop', 'ovFoundry']) document.getElementById(id).classList.remove('on');
+  for (const id of ['ovTitle', 'ovOver', 'ovJunction', 'ovPause', 'ovShop', 'ovFoundry', 'ovWin']) document.getElementById(id).classList.remove('on');
   canvas.focus(); msg('DESCEND', '#ff9a3c', 1);
 }
 function togglePause() {
@@ -1343,6 +1525,7 @@ addEventListener('keydown', e => {
   const k = e.key.toLowerCase(); keys[k] = true; audioInit();
   if (k === ' ' || k.startsWith('arrow')) e.preventDefault();
   if (state === 'title' && (k === ' ' || k === 'enter')) return start();
+  if (state === 'victory') { if (k === 's') closeVictory(false); if (k === 'e') closeVictory(true); return; }
   if (state === 'over' && save.pending) { if (k === 'k') tarotChoice('keep'); if (k === 'p') tarotChoice('pass'); if (k >= '1' && k <= '3' && save.hand.length >= 3) tarotChoice('r' + (+k - 1)); return; }
   if (state === 'over' && k === 'r') return start();
   if ((state === 'over' || state === 'title') && k === 'f') return openFoundry();
@@ -1372,6 +1555,8 @@ document.getElementById('bFoundry2').onclick = openFoundry;
 document.getElementById('bFBack').onclick = closeFoundry;
 document.getElementById('bRefund').onclick = metaRefund;
 document.getElementById('bNew').onclick = newGame;
+document.getElementById('bSurface').onclick = () => closeVictory(false);
+document.getElementById('bEndless').onclick = () => closeVictory(true);
 document.getElementById('oTarot').onclick = e => { const t = e.target.closest('[data-t]'); if (t) tarotChoice(t.dataset.t); };
 
 // ============================================================ post-process (RGB565 dither, scanlines, CA, vignette)
@@ -1450,6 +1635,8 @@ function update(dt) {
   updateDrills(dt);
   updateHazards(dt);
   updatePanels(dt);
+  updateBoss(dt);
+  if (state !== 'play') return;
   if (state !== 'play') return;
 
   // balls (fixed substeps so the core can't tunnel)
@@ -1462,7 +1649,9 @@ function update(dt) {
     }
     else {
       b.boost = Math.max(1, b.boost - dt * 0.4);
-      const s = Math.hypot(b.vx, b.vy) || 1, k = curSpeed() * b.boost / s; b.vx *= k; b.vy *= k;
+      const sp = curSpeed() * b.boost;
+      if (Math.abs(b.vy) < 0.3 * sp) b.vy = (b.vy < 0 ? -1 : 1) * 0.3 * sp;          // never near-horizontal: no wall-to-wall pinball loops
+      const s = Math.hypot(b.vx, b.vy) || 1, k = sp / s; b.vx *= k; b.vy *= k;
       if (Math.random() < 0.6) spark(b.x, b.y, 0.3, rnd(-0.5, 0.5), rnd(-0.5, 0.5), b.boost > 1.05 ? [0.6, 1, 0.4] : b.col, 0.25);
     }
     if (b.lost) { removeBall(b); burst(b.x, rigY + 0.8, 20, [1, 0.6, 0.2], 6, 0.4); if (balls.length && !dropping) { hullFlash = 0.35; shake = Math.max(shake, 0.3); stats.chips++; if (damageHull(4 * Math.max(0, 1 + A('chip')), 'missed cores')) return; } }
@@ -1486,7 +1675,7 @@ function update(dt) {
 
   // structural clearance -> clamps
   const cl = zoneCleared();
-  if (!dropping) {
+  if (!dropping && !boss) {
     // anti-softlock: if the structure stops changing for 20s while mostly cleared, it settles and the clamps release anyway
     if (Math.abs(cl - zoneLast) > 1e-6) { zoneLast = cl; zoneIdle = 0; } else zoneIdle += dt;
     if (pressureT < 0 && cl < CLEAR_REQ && cl >= 0.45 && zoneIdle > 20) { pressureT = pressureMax(); sfx.clamp(); msg('STRUCTURE SETTLING — CLAMPS READY', '#9cff6a', 1.4); }
@@ -1514,14 +1703,22 @@ function hud(cl) {
   $('hClr').style.width = Math.round(Math.min(1, cl / CLEAR_REQ * 0.65) * 100) + '%';
   $('hClr').style.background = cl >= CLEAR_REQ ? '#9cff6a' : '#d4552a';
   $('hClrT').innerHTML = dropping ? '<span class="grn">DESCENDING…</span>'
+    : boss ? '<span class="red">CLAMPS LOCKED — SLAY THE WYRM</span>'
     : pressureT >= 0 ? `<span class="grn">CLAMPS READY — RMB / E</span> <span class="${pressureT < 6 ? 'red' : 'dim'}">auto ${Math.ceil(pressureT)}s</span>`
     : Math.round(cl * 100) + '%';
   const lead = balls.reduce((a, b) => !a || upTotal(b) > upTotal(a) ? b : a, null);
-  const coreHtml = (lead ? UP_KEYS.filter(k => lead.up[k]).map(k => `<span style="color:${PU[k].col}">${PU[k].L}${lead.up[k]}</span>`).join(' ') : '')
+  const coreHtml = (lead ? evoOf(lead).map(k => `<span style="color:#7affd4">${EVOS[k].name}</span> `).join('') : '') + (lead ? UP_KEYS.filter(k => lead.up[k]).map(k => `<span style="color:${PU[k].col}">${PU[k].L}${lead.up[k]}</span>`).join(' ') : '')
     + ` <span class="dim">CORES ${balls.length}/${MAX_BALLS}</span>` + (wideT > 0 ? ` <span class="grn">W${Math.ceil(wideT)}s</span>` : '') + (magT > 0 ? ` <span style="color:#c86aff">U${Math.ceil(magT)}s</span>` : '') + (catchT > 0 ? ` <span style="color:#7affd4">C${Math.ceil(catchT)}s</span>` : lv('catch') ? ` <span style="color:#7affd4">GRAPPLE</span>` : '');
   if (hud.core !== coreHtml) { $('hCore').innerHTML = coreHtml; hud.core = coreHtml; }
   const arcTxt = save.hand.map(h => ARCANA[h.n].name.replace('THE ', '') + (h.rev ? '↓' : '')).join(' · ');
   if (hud.arc !== arcTxt) { $('hArc').textContent = arcTxt ? 'ARCANA: ' + arcTxt : ''; hud.arc = arcTxt; }
+  const bb = $('bossBar');
+  if (boss) {
+    bb.style.display = ''; $('bossName').textContent = boss.def.name;
+    const segHp = boss.segs.reduce((a, s2) => a + (s2.alive ? s2.hp : 0), 0), segMax = boss.segs.reduce((a, s2) => a + s2.max, 0);
+    $('bossHp').style.width = Math.round((segHp + Math.max(0, boss.hp)) / (segMax + boss.max) * 100) + '%';
+    $('bossNote').textContent = bossArmored() ? boss.segs.filter(s2 => s2.alive).length + ' armor plates' : 'HEAD EXPOSED';
+  } else bb.style.display = 'none';
   const ch = $('chain');
   if (combo >= 5) { ch.textContent = combo + ' CHAIN'; ch.style.opacity = 1; } else ch.style.opacity = 0;
 }
@@ -1579,6 +1776,15 @@ function render(dt) {
   // lights: balls first, then flashes, then rig lamps
   let li = 0;
   const put = (x, y, z, rad, r, g, b) => { if (li >= NL) return; _v4[li].set(x, y, z, rad); _l3[li].set(r, g, b); li++; };
+  if (boss) {
+    const B = boss, armored = bossArmored();
+    B.head.position.set(B.x, B.y, 0.2); B.head.rotation.z = (B.dir || 0) + Math.PI / 2; B.head.rotation.y = Math.sin(time * 3) * 0.3;
+    const tele = B.phase === 'tele' && ((time * 14) | 0) % 2;
+    B.eyeMat.color.setHex(tele ? 0xffffff : armored ? 0xff3020 : 0xffb020);
+    B.headMat.uniforms.uEmis.value.set(B.hitT > 0 ? 1.5 : tele ? 0.8 : 0, B.hitT > 0 ? 0.6 : 0.1, 0);
+    for (const s2 of B.segs) if (s2.alive) { s2.mesh.position.set(s2.x, s2.y, 0); s2.mesh.rotation.set(time + s2.x, time * 0.7, 0); s2.mesh.scale.setScalar(1 + s2.hitT * 1.5); }
+    put(B.x, B.y, 1.5, 6, tele ? 2.2 : 1.2, 0.3, 0.2);
+  }
   for (const d of drills.slice(0, 1)) put(cellX(d.c), d.y - 1, 1.5, 9, 2.4, 1.3, 0.5);
   for (const b of balls.slice(0, 5)) { const k = b.boost > 1.05 ? 0.5 : 0; put(b.x, b.y, 1.5, 9 + upTotal(b) * 0.3, b.col[0] * 2.6 + 0.4, b.col[1] * 2.6 + 0.2 + k, b.col[2] * 2.6 + 0.1); }
   for (const f of flashes.slice(0, 2)) { const k = f.life / f.max; put(f.x, f.y, 2, f.rad, f.col[0] * k, f.col[1] * k, f.col[2] * k); }
@@ -1624,8 +1830,9 @@ requestAnimationFrame(frame);
 window.__ab = {
   giveShop(k, n = 1) { shop[k] = n; syncPanels(); },
   abandon() { if (state !== 'over') gameOver(); },
+  closeVictory, get boss() { return boss && { name:boss.def.name, hp:boss.hp, armored:bossArmored() }; },
   tarotChoice, cardValue, get hand() { return save.hand; }, get pending() { return save.pending; }, get arc() { return arc; },
-  get s() { return { state, lastRun, banksRun, R, depth:R * M_PER_ROW, hull, maxHull:maxHull(), cargo, cargoMult, banked, bankedTotal, score, balls:balls.length, loot:loot.length, pressureT, rows:rows.size, shop:{ ...shop }, stats:{ ...stats, pods:{ ...stats.pods } }, cleared:zoneCleared() }; },
+  get s() { return { state, lastRun, bossKills, won, endless, banksRun, R, depth:R * M_PER_ROW, hull, maxHull:maxHull(), cargo, cargoMult, banked, bankedTotal, score, balls:balls.length, loot:loot.length, pressureT, rows:rows.size, shop:{ ...shop }, stats:{ ...stats, pods:{ ...stats.pods } }, cleared:zoneCleared() }; },
   start, setBot(skill) { bot = skill == null ? null : { skill }; },
   tick(dt) { time += dt; if (state === 'play') update(dt); },
   junction:closeJunction, closeShop, SHOP, META, buyOffer, repair, reroll,

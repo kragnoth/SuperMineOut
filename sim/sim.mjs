@@ -63,6 +63,7 @@ for (let r = 0; r < runs; r++) {
       ab.tick(DT); t += DT;
       const s = ab.s;
       if (s.state === 'over') break;
+      if (s.state === 'victory') ab.closeVictory(process.env.ENDLESS === '1');
       if (s.state === 'junction') {
         junctions++;
         const bank = policy === 'bank' || (policy === 'mixed' && (s.hull < 60 || junctions % 2 === 0));
@@ -101,7 +102,7 @@ for (let r = 0; r < runs; r++) {
     if (!cand.length || ab.metaCost(cand[0].k) > ab.save.scrip) break;
     foundry.push(cand[0].k); ab.metaBuy(cand[0].k);
   }
-  results.push({ skill:+sk.toFixed(2), score:s.score, st:s.stats, tarot, hand:ab.hand.map(h => h.n + (h.rev ? 'R' : '')).join(','), scripEarned:s.lastRun?.earned, scripBank:ab.save.scrip, ranks:Object.values(ab.save.ranks).reduce((a, b) => a + b, 0), foundry:foundry.join(','), unlocked:s.lastRun?.fresh?.join(','), chips:s.stats.chips, stal:s.stats.stalHits, laserShots:s.stats.laserShots, skimmed:s.stats.skimmed, run:r, end:err ? 'ERROR' : stuck ? 'STUCK' : s.state === 'over' ? 'died' : 'timeout', min:+(t / 60).toFixed(1), depth:s.depth,
+  results.push({ won:s.won, bossKills:s.bossKills, slams:s.stats.slams || 0, evos:s.stats.evos || 0, skill:+sk.toFixed(2), score:s.score, st:s.stats, tarot, hand:ab.hand.map(h => h.n + (h.rev ? 'R' : '')).join(','), scripEarned:s.lastRun?.earned, scripBank:ab.save.scrip, ranks:Object.values(ab.save.ranks).reduce((a, b) => a + b, 0), foundry:foundry.join(','), unlocked:s.lastRun?.fresh?.join(','), chips:s.stats.chips, stal:s.stats.stalHits, laserShots:s.stats.laserShots, skimmed:s.stats.skimmed, run:r, end:err ? 'ERROR' : stuck ? 'STUCK' : s.state === 'over' ? 'died' : 'timeout', min:+(t / 60).toFixed(1), depth:s.depth,
     bankedTotal:s.bankedTotal, cargoLost:s.cargo, ore:s.stats.ore, blocks:s.stats.blocks, drops:s.stats.drops, hullHits:s.stats.hullHits,
     maxCores:s.stats.maxCores, maxStack:s.stats.maxStack, pods:s.stats.pods, buys:buys.join(','), depthByMin:Object.values(depthAt).join(' '), err });
 }
