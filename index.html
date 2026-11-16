@@ -268,7 +268,7 @@ function starterUp() {                      // capped at MAX_UP total
 const ARCANA = [
   { n:0,  name:'THE FOOL',           g:'✦', m:{ up_split:1, hullPct:-0.2 } },
   { n:1,  name:'THE MAGICIAN',       g:'∞', m:{ up_arc:1, up_blast:1, speed:0.1 } },
-  { n:2,  name:'THE HIGH PRIESTESS', g:'☽', m:{ warn:0.5, ore:-0.1 } },
+  { n:2,  name:'THE HIGH PRIESTESS', g:'☽', m:{ clamp:10, ore:-0.1 } },
   { n:3,  name:'THE EMPRESS',        g:'♀', m:{ ore:0.25 } },
   { n:4,  name:'THE EMPEROR',        g:'♜', m:{ hull:30, padW:-0.3 } },
   { n:5,  name:'THE HIEROPHANT',     g:'⚷', m:{ credits:300, shopCost:0.15 } },
@@ -281,10 +281,10 @@ const ARCANA = [
   { n:12, name:'THE HANGED MAN',     g:'⚓', m:{ clamp:15, speed:-0.1 } },
   { n:13, name:'DEATH',              g:'☠', m:{ scrip:0.5, hullPct:-0.4 } },
   { n:14, name:'TEMPERANCE',         g:'⧖', m:{ speed:-0.15, ore:-0.2 } },
-  { n:15, name:'THE DEVIL',          g:'⛧', m:{ ore:0.6, rock:1 } },
+  { n:15, name:'THE DEVIL',          g:'⛧', m:{ ore:0.6, dmg:0.4 } },
   { n:16, name:'THE TOWER',          g:'♖', m:{ gas:1, dmg:0.2 } },
   { n:17, name:'THE STAR',           g:'★', m:{ pods:0.25, hull:15 } },
-  { n:18, name:'THE MOON',           g:'☾', m:{ rock:-0.4, padW:-0.3 } },
+  { n:18, name:'THE MOON',           g:'☾', m:{ magnet:1, chip:0.5 } },
   { n:19, name:'THE SUN',            g:'☀', m:{ ore:0.2, pods:0.2, speed:0.15 } },
   { n:20, name:'JUDGEMENT',          g:'♆', m:{ revive:1, scrip:-0.2 } },
   { n:21, name:'THE WORLD',          g:'⊕', m:{ ore:0.1, pods:0.1, scrip:0.1, hullPct:0.1 }, rare:true },
@@ -1026,9 +1026,10 @@ function updatePanels(dt) {
     p.beamT = Math.max(0, p.beamT - dt);
   }
 }
+const ROCKFALL = false;                         // boulders removed (v0.7); the system stays in for possible later use
 function updateHazards(dt) {
   for (const g of [...gameTimers]) { g.t -= dt; if (g.t <= 0) { gameTimers.splice(gameTimers.indexOf(g), 1); g.fn(); } }
-  if (R >= 20 && save.rec.everBought && !dropping) {
+  if (ROCKFALL && R >= 20 && save.rec.everBought && !dropping) {
     hazT -= dt;
     if (hazT <= 0) {
       hazT = Math.max(2.5, 14 - R * 0.045) * rnd(0.7, 1.3) / Math.max(0.2, 1 + A('rock'));
@@ -1264,7 +1265,6 @@ function renderFoundry() {
 function metaBuy(k) {
   const m = META.find(x => x.k === k); if (!m || !metaUnlocked(m) || mr(k) >= m.max) return deny();
   const c = metaCost(m); if (save.scrip < c) return deny();
-  if (!save.rec.everBought) msg('ROCKFALL WILL NOW THREATEN THE DEEP', '#ff5a3c', 1.6);
   save.scrip -= c; save.spent += c; save.bought++; save.ranks[k] = mr(k) + 1; save.rec.everBought = true;
   tone(660, 0.08, 'square', 0.1, 990); persist(); renderFoundry();
 }
@@ -1561,7 +1561,7 @@ function render(dt) {
   shake = Math.max(0, shake - dt * 2.2);
   hullFlash = Math.max(0, hullFlash - dt * 2.5);
   post.material.uniforms.uFlash.value = hullFlash * 0.5;
-  const ty = rigY - 6.2, sx = (Math.random() - 0.5) * shake * 0.5, sy = (Math.random() - 0.5) * shake * 0.5;
+  const ty = rigY - 4.6, sx = (Math.random() - 0.5) * shake * 0.5, sy = (Math.random() - 0.5) * shake * 0.5;
   camera.position.set(sx, ty + 5.5 + sy, 26); camera.lookAt(sx * 0.5, ty + sy * 0.5, 0);
   const camY = ty;
   backWall.position.y = camY; wallMat.uniforms.uUvOff.value.y = (camY / 4) % 1;
