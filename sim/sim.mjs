@@ -79,7 +79,7 @@ for (let r = 0; r < runs; r++) {
         ab.closeShop();
       }
       if (s.stats.t - s.stats.lastProg > 60) { stuck = true; break; }
-      const m = Math.floor(t / 60); if (!(m in depthAt)) depthAt[m] = s.depth;
+      const m = Math.floor(t / 60); if (!(m in depthAt)) depthAt[m] = s.depth + ':' + s.score;
     }
   } catch (e) { err = e.stack.split('\n').slice(0, 4).join(' | '); }
   if (!err && !stuck && ab.s.state !== 'over') ab.abandon();   // time limit: end the run so scrip is paid out

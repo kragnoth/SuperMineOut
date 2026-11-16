@@ -93,7 +93,7 @@
     <p>Catch power-up pods. Core upgrades stack up to 8 per core and are inherited by every split: <span style="color:#ff7a2a">X</span> Fission (splits now, then cores keep budding as they break blocks, up to 8), <span style="color:#ff3a3a">S</span>trength, <span style="color:#dfe9ff">P</span>ierce, <span style="color:#ffae2a">B</span>last, <span style="color:#5ae6ff">Z</span> arc, <span style="color:#ffd84a">$</span> prospector. Plus <span style="color:#c8c8c8">M</span> mega drill, <span style="color:#9cff6a">W</span>ide rig, <span style="color:#c86aff">U</span> magnet surge, <span style="color:#7affd4">C</span> catch (cores stick, click to release), <span style="color:#ff8ab0">+</span> hull. Bank at junctions to buy run upgrades in the workshop. When the rig is lost you earn <span class="gold">scrip</span> for permanent upgrades in the Foundry.</p>
     <p>Broken ore is pulled <b>up</b> to your magnetic hopper, so be under it when it arrives. Every 60m there's an elevator junction: bank your cargo or push your luck.</p>
     <div class="keys">
-      MOUSE / A D ← → &nbsp; move rig<br>
+      MOUSE / A D ← → &nbsp; move rig · mouse height / W S &nbsp; lower it on its spring<br>
       CLICK / SPACE &nbsp; launch core<br>
       RIGHT-CLICK / E &nbsp; release clamps (drop)<br>
       C crt/dither · J vertex jitter · M mute · P pause
@@ -183,6 +183,7 @@ const SHOP = [
   { k:'drillbay',name:'DRILL BAY',      desc:'free Mega Drill after every drop',  max:2, base:900, mul:2.0 },
   { k:'clamps', name:'HEAVY CLAMPS',    desc:'+8s before the clamps auto-release', max:3, base:250, mul:1.6 },
   { k:'skimmer',name:'SKIMMER PANEL',   desc:'wall panel roams the shaft, magnets loose ore into the hold (2nd: both walls, 3rd: wider pull)', max:3, base:500, mul:1.8 },
+  { k:'servo',  name:'SERVO WINCH',     desc:'stiffer spring: the rig follows your aim faster', max:2, base:350, mul:1.8 },
   { k:'catch',  name:'GRAPPLE BUMPER',  desc:'cores stick to the bumper until you click (1st: up to 4s, 2nd: hold forever)', max:2, base:450, mul:2.0 },
   { k:'laser',  name:'LASER PANEL',     desc:'wall panel roams the shaft, lasers through the rock (2nd: both walls, 3rd: faster, harder)', max:3, base:650, mul:1.9 },
 ];
@@ -200,6 +201,7 @@ const META = [
   { k:'span',    name:'BUMPER SPAN',     desc:'+0.25 paddle width',               max:3, base:220 },
   { k:'lode',    name:'LODESTONE',       desc:'+1 magnet level',                  max:3, base:180 },
   { k:'might',   name:'MIGHT',           desc:'+10% chance of +1 hit damage',     max:5, base:200 },
+  { k:'winch',   name:'WINCH CABLE',     desc:'+0.9 cells the rig can drop on its spring', max:4, base:160 },
   { k:'gov',     name:'CORE GOVERNOR',   desc:'-5% core speed',                   max:2, base:350 },
   { k:'luck',    name:'LUCK',            desc:'+10% power-up drops',              max:3, base:300 },
   { k:'assay',   name:'ASSAYER',         desc:'+10% ore value',                   max:5, base:180 },
@@ -568,9 +570,14 @@ const vent = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.22, 0.1), ventMat); ven
 const lampMat = new THREE.MeshBasicMaterial({ color:0xffe08a });
 for (const s of [-1, 1]) {
   const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.16, 0.2), lampMat); lamp.position.set(s * 1.1, -0.3, 0.6); rig.add(lamp);
-  const piston = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.5, 6), metalMat); piston.position.set(s * 0.8, 0.6, 0); piston.name = 'piston'; rig.add(piston);
-  const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.6), metalMat); wheel.position.set(s * 0.8, 0.86, 0); rig.add(wheel);
+  const piston = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.35, 6), metalMat); piston.position.set(s * 0.8, 0.52, 0); piston.name = 'piston'; rig.add(piston);
 }
+// trolley rides the bridge; the rig hangs below it on a coil spring
+const trolley = new THREE.Group(); scene.add(trolley);
+for (const s of [-1, 1]) { const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.22, 0.6), metalMat); wheel.position.set(s * 0.6, 0.86, 0); trolley.add(wheel); }
+const winch = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 8), metalMat); winch.rotation.z = Math.PI / 2; winch.position.y = 0.62; trolley.add(winch);
+const coilPts = []; for (let i = 0; i <= 160; i++) { const t = i / 160, a = t * Math.PI * 2 * 7; coilPts.push(new THREE.Vector3(Math.cos(a) * 0.3, t - 0.5, Math.sin(a) * 0.3)); }
+const coil = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(coilPts), 200, 0.045, 5, false), metalMat); scene.add(coil);
 const bridge = new THREE.Group(); scene.add(bridge);
 const beam = new THREE.Mesh(new THREE.BoxGeometry(COLS + 1, 0.34, 1.0), litMat(girderTex, { uv:[COLS, 1], tint:[2.2, 2.2, 2.2] })); beam.position.y = 0.86; bridge.add(beam);
 const clampLights = [];
@@ -656,6 +663,10 @@ const sfx = {
 // ============================================================ game state
 const rows = new Map();
 let state = 'title', R = 0, rigY = 0, px = 0, pxTarget = 0, firstRock = ZONE_OFF;
+// rigY = bridge height; the rig itself hangs `drop` cells below it on a spring
+let drop = 0, dropV = 0, dropTarget = 0, paddleY = 0, mouseFy = -1, rockAnnounced = false;
+const reach = () => Math.min(4.6, 1 + 0.9 * mr('winch'));            // paddle never reaches the structure zone
+const springK = () => 120 * (1 + 0.6 * lv('servo'));
 let balls = [], loot = [], flashes = [];
 let hull = 100, cargo = 0, cargoMult = 1, banked = 0, score = 0, combo = 0, bestCombo = 0;
 let pressureT = -1, dropping = null, shake = 0, hullFlash = 0, time = 0, crt = true, maxDepth = 0;
@@ -668,7 +679,7 @@ function setTimeoutGame(fn, sec) { gameTimers.push({ fn, t:sec }); }
 const gauss = () => Math.sqrt(-2 * Math.log(Math.random() + 1e-9)) * Math.cos(6.2832 * Math.random());
 // simulated player for logic-only playthrough tests (skill 0..1)
 function botStep(dt) {
-  const s = bot.skill, pBot = rigY - 0.55;
+  const s = bot.skill, pBot = paddleY - 0.55;
   let tgt = null, tBest = 1e9;
   for (const b of balls) if (!b.docked && b.vy > 0) { const t = (pBot - BR - b.y) / b.vy; if (t >= 0 && t < tBest) { tBest = t; tgt = b; } }
   if (tgt && tgt !== bot.tgt) { bot.tgt = tgt; bot.seen = 0; bot.err = gauss() * (1 - s) * (1.2 + 0.4 * tBest); bot.aim = rnd(-0.6, 0.6) * padW / 2 * s; }
@@ -681,7 +692,7 @@ function botStep(dt) {
     goal = u - L + bot.err - bot.aim;
   } else {
     let lb = null, ls = -1e9;
-    for (const l of loot) { const sc = (l.kind === 'pu' ? 5 : 0) + l.y; if (l.y > rigY - 6 && sc > ls) { ls = sc; lb = l; } }
+    for (const l of loot) { const sc = (l.kind === 'pu' ? 5 : 0) + l.y; if (l.y > paddleY - 6 && sc > ls) { ls = sc; lb = l; } }
     goal = lb ? lb.x : tgt ? tgt.x : null;
   }
   for (const h of hazards) if (h.age > react) {
@@ -819,7 +830,7 @@ function restyle(b) {                       // core colour = blend of its upgrad
   b.glow.scale.setScalar(2.4 + n * 0.22); b.mesh.scale.setScalar(1 + n * 0.07);
 }
 function removeBall(b) { scene.remove(b.mesh, b.glow); b.mesh.material.dispose(); b.glow.material.dispose(); balls.splice(balls.indexOf(b), 1); }
-function dockNew(up = starterUp()) { addBall(px, rigY - 0.55 - BR - 0.02, 0, 0, true, up); }
+function dockNew(up = starterUp()) { addBall(px, paddleY - 0.55 - BR - 0.02, 0, 0, true, up); }
 // Fission cores can bud a child each time they break a block
 function fissionCheck(b) { if (b.up.split && time - (b.lastSplit || -9) > 0.6 && Math.random() < 0.08 * b.up.split) splitOne(b); }
 const catching = () => lv('catch') > 0 || catchT > 0;
@@ -839,12 +850,12 @@ function stepBall(b, dt) {
   if (b.x + BR > HALF) { b.x = HALF - BR; b.vx = -Math.abs(b.vx); sfx.wall(); }
   if (b.y < -(R + 34)) { b.vy = Math.abs(b.vy); b.vx += rnd(-2, 2); }
   // paddle (underside of the rig)
-  const pBot = rigY - 0.55;
+  const pBot = paddleY - 0.55;
   if (b.vy > 0 && b.y + BR >= pBot && b.y < pBot + 0.45 && Math.abs(b.x - px) <= padW / 2 + BR * 0.8) {
     const off = clamp((b.x - px) / (padW / 2), -1, 1), a = minAngle(off * 1.05), s = curSpeed() * b.boost;
     b.vx = s * Math.sin(a); b.vy = -s * Math.cos(a); b.y = pBot - BR; b.pierceLeft = b.up.pierce || 0;
     if (catching()) { b.docked = true; b.held = true; b.holdX = clamp(b.x - px, -padW / 2, padW / 2); b.holdT = 0; tone(300, 0.08, 'triangle', 0.15, 600); combo = 0; return; }
-    combo = 0; sfx.paddle(); burst(b.x, pBot, 8, [1, 0.8, 0.4], 4, 0.25); rigKick = 0.12;
+    combo = 0; sfx.paddle(); burst(b.x, pBot, 8, [1, 0.8, 0.4], 4, 0.25); rigKick = 0.12; dropV -= 2.5;   // core impact compresses the spring
     return;
   }
   if (b.y - BR > rigY + 0.7) { b.lost = true; return; }
@@ -917,9 +928,9 @@ function spawnLoot(x, y, kind, pu = null) {
   loot.push({ x, y, vx:rnd(-1.6, 1.6), vy:rnd(-3, -1), kind, pu, mesh, glow, spin:kind === 'pu' ? 0 : rnd(2, 6) });
 }
 function collect(l) {
-  if (l.kind === 'pu') { applyPU(l.pu); burst(l.x, rigY - 0.5, 16, [1, 0.7, 0.4], 4, 0.4); return; }
+  if (l.kind === 'pu') { applyPU(l.pu); burst(l.x, paddleY - 0.5, 16, [1, 0.7, 0.4], 4, 0.4); return; }
   const v = (l.kind === 'gold' ? 10 : 50) * (1 + 0.1 * mr('assay')) * Math.max(0.1, 1 + A('ore')); cargo += Math.round(v * cargoMult); stats.ore += v; sfx.ore(l.kind === 'aether');
-  burst(l.x, rigY - 0.5, 10, l.kind === 'aether' ? [0.4, 0.9, 1] : [1, 0.8, 0.3], 3, 0.3);
+  burst(l.x, paddleY - 0.5, 10, l.kind === 'aether' ? [0.4, 0.9, 1] : [1, 0.8, 0.3], 3, 0.3);
 }
 function applyPU(k) {
   const P = PU[k]; sfx.pod(); stats.pods[k] = (stats.pods[k] || 0) + 1;
@@ -956,7 +967,7 @@ function launchDrill(cx = px) {
   const c = clamp(Math.round(cx + HALF - 0.5), 1, COLS - 2);
   const mesh = new THREE.Mesh(drillGeo, metalMat), glow = new THREE.Sprite(glowMats.ball);
   glow.scale.setScalar(4); scene.add(mesh, glow);
-  drills.push({ c, y:rigY - 1.2, row:R + 1, left:Math.round(16 * (1 + 0.2 * mr('dur'))), mesh, glow, v:2 });
+  drills.push({ c, y:paddleY - 1.2, row:R + 1, left:Math.round(16 * (1 + 0.2 * mr('dur'))), mesh, glow, v:2 });
   sfx.drop();
 }
 const stalGeo = new THREE.ConeGeometry(0.42, 1.7, 6); stalGeo.rotateX(Math.PI);
@@ -1026,14 +1037,15 @@ function updatePanels(dt) {
     p.beamT = Math.max(0, p.beamT - dt);
   }
 }
-const ROCKFALL = false;                         // boulders removed (v0.7); the system stays in for possible later use
+const ROCKFALL = true, ROCK_SCORE = 30000;      // boulders only once a run's score is high
 function updateHazards(dt) {
   for (const g of [...gameTimers]) { g.t -= dt; if (g.t <= 0) { gameTimers.splice(gameTimers.indexOf(g), 1); g.fn(); } }
-  if (ROCKFALL && R >= 20 && save.rec.everBought && !dropping) {
+  if (ROCKFALL && score >= ROCK_SCORE && !dropping) {
+    if (!rockAnnounced) { rockAnnounced = true; hazT = 4; msg('THE SHAFT GROANS — ROCKFALL', '#ff5a3c', 1.6); }
     hazT -= dt;
     if (hazT <= 0) {
-      hazT = Math.max(2.5, 14 - R * 0.045) * rnd(0.7, 1.3) / Math.max(0.2, 1 + A('rock'));
-      const x = clamp(px + rnd(-1.6, 1.6), -HALF + 0.6, HALF - 0.6);
+      hazT = Math.max(3, 15 - (score - ROCK_SCORE) / 8000) * rnd(0.7, 1.3) / Math.max(0.2, 1 + A('rock'));
+      const x = rnd(-HALF + 0.6, HALF - 0.6);            // anywhere in the shaft, not aimed at the rig
       const mesh = new THREE.Mesh(stalGeo, metalMat), marker = new THREE.Mesh(warnGeo, warnMat);
       mesh.visible = false; scene.add(mesh, marker);
       hazards.push({ x, warn:Math.max(0.75, 1.4 - R * 0.0025) * Math.max(0.4, 1 + A('warn')), age:0, y:0, vy:0, mesh, marker });
@@ -1044,14 +1056,20 @@ function updateHazards(dt) {
     h.age += dt;
     if (h.warn > 0) { h.warn -= dt; if (h.warn <= 0) { h.y = rigY + 9; h.mesh.visible = true; } continue; }
     h.vy += 45 * dt; h.y -= h.vy * dt;
-    if (h.y <= rigY + 1.3) {
-      scene.remove(h.mesh, h.marker); hazards.splice(hazards.indexOf(h), 1);
-      burst(h.x, rigY + 1.1, 30, [0.8, 0.7, 0.6], 7, 0.5); debris(h.x, rigY + 1.0, 0x5a5048, 8); noise(0.3, 0.3, 500);
+    const gone = () => { scene.remove(h.mesh, h.marker); hazards.splice(hazards.indexOf(h), 1); };
+    if (!h.passed && h.y <= paddleY + 0.6) {             // reaches the rig's height
+      h.passed = true;
       if (Math.abs(h.x - px) < padW / 2 + 0.3) {
+        gone(); burst(h.x, paddleY + 0.6, 30, [0.8, 0.7, 0.6], 7, 0.5); debris(h.x, paddleY + 0.5, 0x5a5048, 8);
         stats.stalHits++; shake = Math.max(shake, 0.7); hullFlash = 0.7; sfx.hull(); msg('ROCKFALL', '#ff5a3c', 0.7);
         if (damageHull(12)) return;
+        continue;
       }
     }
+    // a missed boulder keeps falling and smashes the first block it meets
+    const r = Math.round(-h.y), c = Math.floor(h.x + HALF);
+    if (h.passed && c >= 0 && c < COLS && cell(r, c)) { gone(); destroyBlock(r, c, true, 'drill'); burst(h.x, h.y, 24, [0.8, 0.7, 0.6], 6, 0.5); noise(0.3, 0.3, 500); continue; }
+    if (h.y < rigY - 30) gone();
   }
 }
 function updateDrills(dt) {
@@ -1277,7 +1295,7 @@ function reset() {
   for (const [, row] of rows) { row.mesh.forEach(m => m && scene.remove(m)); row.deco.forEach(m => scene.remove(m)); }
   rows.clear(); for (const b of [...balls]) removeBall(b); for (const l of loot) scene.remove(l.mesh, l.glow); loot = []; flashes = [];
   SEED = (Math.random() * 1e9) | 0;
-  R = 0; rigY = 0; px = pxTarget = 0; firstRock = ZONE_OFF; shop = {}; bankedTotal = 0; magT = 0; catchT = 0; zoneLast = -1; zoneIdle = 0; hull = maxHull(); cargo = 0; cargoMult = 1; banked = 0; score = 0; combo = 0; bestCombo = 0;
+  R = 0; rigY = 0; drop = dropV = dropTarget = 0; paddleY = 0; rockAnnounced = false; px = pxTarget = 0; firstRock = ZONE_OFF; shop = {}; bankedTotal = 0; magT = 0; catchT = 0; zoneLast = -1; zoneIdle = 0; hull = maxHull(); cargo = 0; cargoMult = 1; banked = 0; score = 0; combo = 0; bestCombo = 0;
   pressureT = -1; dropping = null; maxDepth = 0; wideT = 0; padW = basePadW();
   for (const d of drills) scene.remove(d.mesh, d.glow); drills = [];
   stats = newStats(); banksRun = 0; reviveUsed = false; offers = []; banished = new Set(); rerollsFree = mr('reroll'); banishLeft = mr('banish');
@@ -1306,13 +1324,14 @@ function togglePause() {
 
 // ------------------------------------------------------------ input
 const wrapEl = document.getElementById('wrap');
-function pointerX(clientX) {
+function pointerX(clientX, clientY) {
   const rc = wrapEl.getBoundingClientRect();
   pxTarget = ((clientX - rc.left) / rc.width - 0.5) * 23.4; usingMouse = true;
+  if (clientY != null) mouseFy = (clientY - rc.top) / rc.height;
 }
-addEventListener('mousemove', e => pointerX(e.clientX));
-addEventListener('touchmove', e => { pointerX(e.touches[0].clientX); e.preventDefault(); }, { passive:false });
-addEventListener('touchstart', e => { pointerX(e.touches[0].clientX); if (state === 'play') launch(); }, { passive:true });
+addEventListener('mousemove', e => pointerX(e.clientX, e.clientY));
+addEventListener('touchmove', e => { pointerX(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive:false });
+addEventListener('touchstart', e => { pointerX(e.touches[0].clientX, e.touches[0].clientY); if (state === 'play') launch(); }, { passive:true });
 canvas.addEventListener('mousedown', e => {
   audioInit();
   if (state !== 'play') return;
@@ -1412,8 +1431,17 @@ function update(dt) {
   px = usingMouse ? lerp(px, pxTarget, 1 - Math.exp(-dt * 30)) : clamp(lerp(px, pxTarget, 1 - Math.exp(-dt * 20)), -lim, lim);
   px = clamp(px, -lim, lim);
   const rigVel = (px - prevPx) / Math.max(dt, 1e-4);
+  // vertical: mouse height (or W/S) sets how far the spring lets the rig down
+  if (keys['w'] || keys['arrowup']) { dropTarget -= 6 * dt; usingMouse = false; }
+  if (keys['s'] || keys['arrowdown']) { dropTarget += 6 * dt; usingMouse = false; }
+  if (usingMouse && mouseFy >= 0) dropTarget = rigY - ((rigY - 5.6) - (mouseFy - 0.5) * 2 * 8.4) - 0.3;
+  dropTarget = clamp(dropTarget, 0, reach());
+  const k = springK(), c = 2 * Math.sqrt(k) * 0.45;                  // underdamped: it bobs
+  dropV += ((dropTarget - drop) * k - dropV * c) * dt;
+  drop = clamp(drop + dropV * dt, -0.25, reach() + 0.35);
 
   if (dropping) updateDrop(dt);
+  paddleY = rigY - drop;
   updateDrills(dt);
   updateHazards(dt);
   updatePanels(dt);
@@ -1424,7 +1452,7 @@ function update(dt) {
   for (let s = 0; s < n; s++) for (const b of balls) if (!b.docked && !b.lost) stepBall(b, h);
   for (const b of [...balls]) {
     if (b.docked) {
-      b.x = px + (b.holdX || 0); b.y = rigY - 0.55 - BR - 0.02;
+      b.x = px + (b.holdX || 0); b.y = paddleY - 0.55 - BR - 0.02;
       if (b.held && (b.holdT = (b.holdT || 0) + dt) > holdLimit()) { launch(); }
     }
     else {
@@ -1442,12 +1470,12 @@ function update(dt) {
   for (const l of [...loot]) {
     l.vy = Math.min(l.vy + 9 * dt, 7.5);
     const mg = Math.max(0, lv('magnet') + mr('lode') + A('magnet') + (magT > 0 ? 3 : 0));
-    if (rigY - l.y < 5 + mg * 1.6) l.vx += (px - l.x) * (1.1 + mg * 0.8) * dt; // magnetic hopper
-    if (mg && rigY - l.y < 2.5 + mg) l.vy += mg * 1.5 * dt;
+    if (paddleY - l.y < 5 + mg * 1.6) l.vx += (px - l.x) * (1.1 + mg * 0.8) * dt; // magnetic hopper
+    if (mg && paddleY - l.y < 2.5 + mg) l.vy += mg * 1.5 * dt;
     l.vx *= 0.985; l.x = clamp(l.x + l.vx * dt, -HALF + 0.2, HALF - 0.2); l.y += l.vy * dt;
     let gone = false;
-    if (l.y >= rigY - 0.6 && l.y < rigY + 0.2 && Math.abs(l.x - px) <= padW / 2 + 0.35 + Math.max(0, lv('magnet') + mr('lode') + A('magnet') + (magT > 0 ? 3 : 0)) * 0.12) { collect(l); gone = true; }
-    else if (l.y > rigY + 1.2) { gone = true; burst(l.x, l.y, 6, [0.5, 0.4, 0.3], 2, 0.3); }
+    if (l.y >= paddleY - 0.6 && l.y < paddleY + 0.2 && Math.abs(l.x - px) <= padW / 2 + 0.35 + Math.max(0, lv('magnet') + mr('lode') + A('magnet') + (magT > 0 ? 3 : 0)) * 0.12) { collect(l); gone = true; }
+    else if (l.y > paddleY + 1.2) { gone = true; burst(l.x, l.y, 6, [0.5, 0.4, 0.3], 2, 0.3); }
     if (gone) { scene.remove(l.mesh, l.glow); loot.splice(loot.indexOf(l), 1); }
   }
 
@@ -1519,9 +1547,11 @@ function frameFx(dt) {
 function render(dt) {
   time += dt; shared.uTime.value = time;
   // rig & bridge placement
-  rig.position.set(px, rigY + rigKick * 0.6, 0);
+  rig.position.set(px, paddleY + rigKick * 0.6, 0);
+  trolley.position.set(px, rigY, 0);
+  { const top = rigY + 0.45, bot = paddleY + 0.75, len = Math.max(0.15, top - bot); coil.position.set(px, (top + bot) / 2, 0); coil.scale.set(1, len, 1); }
   bridge.position.y = rigY;
-  for (const p of rig.children) if (p.name === 'piston') p.scale.y = 1 + Math.sin(time * 14 + p.position.x) * 0.15 * Math.min(1, Math.abs(px - pxTarget));
+  for (const p of rig.children) if (p.name === 'piston') p.scale.y = 1 + Math.sin(time * 14 + p.position.x) * 0.15 * Math.min(1, Math.abs(px - pxTarget) + Math.abs(dropV) * 0.2);
   const ready = pressureT >= 0 || dropping;
   for (const c of clampLights) c.material.color.setHex(ready ? ((time * 6 | 0) % 2 ? 0x9cff6a : 0x2a5a1a) : 0xff3020);
   ventMat.uniforms.uEmis.value.set(1.4 + Math.sin(time * 9) * 0.4, 0.5, 0.1);
@@ -1547,8 +1577,8 @@ function render(dt) {
   for (const d of drills.slice(0, 1)) put(cellX(d.c), d.y - 1, 1.5, 9, 2.4, 1.3, 0.5);
   for (const b of balls.slice(0, 5)) { const k = b.boost > 1.05 ? 0.5 : 0; put(b.x, b.y, 1.5, 9 + upTotal(b) * 0.3, b.col[0] * 2.6 + 0.4, b.col[1] * 2.6 + 0.2 + k, b.col[2] * 2.6 + 0.1); }
   for (const f of flashes.slice(0, 2)) { const k = f.life / f.max; put(f.x, f.y, 2, f.rad, f.col[0] * k, f.col[1] * k, f.col[2] * k); }
-  put(px - 1.1, rigY - 1.2, 1.6, 7.5, 1.2, 0.95, 0.6);
-  put(px + 1.1, rigY - 1.2, 1.6, 7.5, 1.2, 0.95, 0.6);
+  put(px - 1.1, paddleY - 1.2, 1.6, 7.5, 1.2, 0.95, 0.6);
+  put(px + 1.1, paddleY - 1.2, 1.6, 7.5, 1.2, 0.95, 0.6);
   while (li < NL) { _v4[li].set(0, 1e4, 0, 1); _l3[li].set(0, 0, 0); li++; }
 
   // biome atmosphere
@@ -1561,7 +1591,7 @@ function render(dt) {
   shake = Math.max(0, shake - dt * 2.2);
   hullFlash = Math.max(0, hullFlash - dt * 2.5);
   post.material.uniforms.uFlash.value = hullFlash * 0.5;
-  const ty = rigY - 4.6, sx = (Math.random() - 0.5) * shake * 0.5, sy = (Math.random() - 0.5) * shake * 0.5;
+  const ty = rigY - 5.6, sx = (Math.random() - 0.5) * shake * 0.5, sy = (Math.random() - 0.5) * shake * 0.5;
   camera.position.set(sx, ty + 5.5 + sy, 26); camera.lookAt(sx * 0.5, ty + sy * 0.5, 0);
   const camY = ty;
   backWall.position.y = camY; wallMat.uniforms.uUvOff.value.y = (camY / 4) % 1;
